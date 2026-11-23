@@ -1,19 +1,268 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
-<style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calima Bay: Sunset Syndicate</title>
+  <link rel="stylesheet" href="./styles/hud.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three.module.min.js"
+      }
+    }
+  </script>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
-<script type="module" src="./src/main.js"></script>
+  <div id="viewport">
+    <canvas id="game-canvas"></canvas>
+    <div id="damage-vignette"></div>
+    <div id="nitro-vignette"></div>
+    <div id="crosshair" class="hidden">
+      <span class="ch-line ch-top"></span>
+      <span class="ch-line ch-bottom"></span>
+      <span class="ch-line ch-left"></span>
+      <span class="ch-line ch-right"></span>
+      <span class="ch-dot"></span>
+    </div>
+  </div>
+
+  <!-- Live In-Game HUD -->
+  <div id="hud" class="hidden">
+    <!-- Top Left: Mission, District, Radio -->
+    <div id="hud-top-left">
+      <div id="district-pill">
+        <span class="pill-accent"></span>
+        <span id="district-name">PALMA STRIP</span>
+        <span id="time-badge">GOLDEN SUNSET</span>
+      </div>
+      <div id="mission-card">
+        <div class="mission-header">
+          <span id="mission-tag">SYNDICATE OP 01</span>
+          <span id="mission-dist">240m</span>
+        </div>
+        <div id="mission-title">FIRST BOOST</div>
+        <div id="mission-objective">Acquire a Sunset GT along Palma Strip and reach Morales Customs.</div>
+        <div id="mission-progress-wrap" class="hidden">
+          <div id="mission-progress-bar"></div>
+        </div>
+      </div>
+      <div id="radio-pill">
+        <span class="radio-wave">♪</span>
+        <span id="radio-station">104.7 PALM WAVE FM</span>
+        <span id="radio-hint">[R]</span>
+      </div>
+    </div>
+
+    <!-- Top Right: Wanted, Dispatch, Cash, Respect, Vitals, Weapon -->
+    <div id="hud-top-right">
+      <div id="wanted-panel">
+        <div id="wanted-stars">
+          <span class="star" data-star="1">★</span>
+          <span class="star" data-star="2">★</span>
+          <span class="star" data-star="3">★</span>
+          <span class="star" data-star="4">★</span>
+          <span class="star" data-star="5">★</span>
+        </div>
+        <div id="dispatch-banner" class="hidden">
+          <span class="dispatch-dot"></span>
+          <span id="dispatch-text">CBPD PURSUIT ACTIVE</span>
+        </div>
+      </div>
+
+      <div id="stats-card">
+        <div class="cash-row">
+          <span id="cash-display">$12,450</span>
+          <span id="rank-badge">STREET RUNNER</span>
+        </div>
+        <div class="vitals-grid">
+          <div class="vital-row">
+            <span class="vital-label">HP</span>
+            <div class="vital-track"><div id="health-bar" class="vital-fill health"></div></div>
+            <span id="health-val" class="vital-num">100</span>
+          </div>
+          <div class="vital-row">
+            <span class="vital-label">AR</span>
+            <div class="vital-track"><div id="armor-bar" class="vital-fill armor"></div></div>
+            <span id="armor-val" class="vital-num">50</span>
+          </div>
+        </div>
+        <div id="weapon-row">
+          <div class="weapon-info">
+            <span id="weapon-name">CARBINE RIFLE</span>
+            <span id="weapon-slot-hint">[1-6 / Q]</span>
+          </div>
+          <span id="weapon-ammo">30 / 180</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center-Top Toast & Commlink -->
+    <div id="toast-banner" class="hidden">
+      <div id="toast-title">STUNT JUMP COMPLETE</div>
+      <div id="toast-sub">+$1,200 · 48m AIRTIME</div>
+    </div>
+
+    <div id="commlink-bar" class="hidden">
+      <div id="commlink-speaker">NADIA CRUZ</div>
+      <div id="commlink-text">CBPD units are converging on Palma Strip — punch the nitro and lose Air One!</div>
+    </div>
+
+    <!-- Bottom Left: Live Minimap -->
+    <div id="hud-bottom-left">
+      <div id="minimap-frame">
+        <canvas id="minimap-canvas" width="212" height="212"></canvas>
+        <div class="minimap-compass">N</div>
+        <div id="minimap-legend">
+          <span class="leg-item"><i class="dot gold"></i>OP</span>
+          <span class="leg-item"><i class="dot police"></i>CBPD</span>
+          <span class="leg-item"><i class="dot cyan"></i>SHOP</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Right: Vehicle Speedo OR Action Prompts -->
+    <div id="hud-bottom-right">
+      <div id="context-prompt" class="hidden">
+        <span id="context-key">F</span>
+        <span id="context-label">HIJACK SUNSET GT</span>
+      </div>
+
+      <div id="crew-pill">
+        <span class="crew-key">[C]</span>
+        <span id="crew-ability-name">NADIA: RADIO JAMMER</span>
+        <span id="crew-cooldown">READY</span>
+      </div>
+
+      <div id="vehicle-panel" class="hidden">
+        <div class="veh-top">
+          <span id="veh-name">SUNSET GT</span>
+          <span id="veh-health-tag">HULL 100%</span>
+        </div>
+        <div class="speed-row">
+          <span id="speed-num">0</span>
+          <span class="speed-unit">KM/H</span>
+          <span id="drift-badge" class="hidden">DRIFT</span>
+        </div>
+        <div class="nitro-row">
+          <span class="nitro-label">NITRO</span>
+          <div class="nitro-track"><div id="nitro-bar"></div></div>
+        </div>
+      </div>
+
+      <div id="controls-strip">
+        <span><b>F</b> Vehicle</span>
+        <span><b>Q</b> Arsenal</span>
+        <span><b>E</b> Shop</span>
+        <span><b>T</b> Sky</span>
+        <span><b>TAB</b> Atlas</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Title Screen Overlay -->
+  <div id="title-screen">
+    <div class="title-panel">
+      <div class="title-eyebrow">SUN-SOAKED OPEN-WORLD CRIME ACTION</div>
+      <h1 class="title-logo">
+        <span class="logo-main">CALIMA BAY</span>
+        <span class="logo-sub">SUNSET SYNDICATE</span>
+      </h1>
+      <p class="title-tagline">
+        Six neon-lit coastal districts. Eight syndicate operations. Outrun the 5-star CBPD lockdown and Air One across Palma Strip, Solstice Downtown &amp; Cayo Brisa Causeway.
+      </p>
+      <div class="title-actions">
+        <button id="btn-play" class="btn-primary">PLAY CALIMA BAY</button>
+        <button id="btn-continue" class="btn-secondary">CONTINUE CAREER</button>
+      </div>
+      <div class="title-slots">
+        <div class="slots-label">CAREER SAVE SLOTS</div>
+        <div id="title-slot-list" class="slot-grid"></div>
+      </div>
+      <div class="title-controls">
+        <span><b>WASD</b> Move / Drive</span>
+        <span><b>MOUSE</b> Aim / Fire</span>
+        <span><b>F</b> Enter / Hijack</span>
+        <span><b>SPACE</b> Drift / Jump</span>
+        <span><b>SHIFT</b> Nitro / Sprint</span>
+        <span><b>Q</b> Weapon Wheel</span>
+        <span><b>E</b> Garage / Armory</span>
+        <span><b>R</b> FM Radio</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause / City Atlas Overlay -->
+  <div id="atlas-modal" class="modal hidden">
+    <div class="modal-card atlas-card">
+      <div class="modal-head">
+        <div>
+          <div class="modal-eyebrow">CALIMA BAY SYNDICATE NETWORK</div>
+          <h2>CITY ATLAS &amp; CAREER</h2>
+        </div>
+        <button id="btn-close-atlas" class="btn-ghost">RESUME [ESC]</button>
+      </div>
+      <div class="atlas-body">
+        <div class="atlas-map-col">
+          <canvas id="atlas-canvas" width="440" height="380"></canvas>
+          <div class="atlas-legend">
+            <span><i class="dot gold"></i>Active Operation</span>
+            <span><i class="dot cyan"></i>Morales Customs</span>
+            <span><i class="dot coral"></i>Underground Armory</span>
+            <span><i class="dot lime"></i>Stunt Ramp</span>
+            <span><i class="dot police"></i>CBPD Unit</span>
+          </div>
+        </div>
+        <div class="atlas-info-col">
+          <div class="info-block">
+            <h3>CAREER PROFILE</h3>
+            <div id="atlas-stats" class="stat-list"></div>
+          </div>
+          <div class="info-block">
+            <h3>DISTRICT STANDING</h3>
+            <div id="atlas-districts" class="district-list"></div>
+          </div>
+          <div class="info-block">
+            <h3>SAVE SLOTS (F5 QUICK SAVE)</h3>
+            <div id="atlas-slots" class="slot-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Garage / Armory Shop Modal -->
+  <div id="shop-modal" class="modal hidden">
+    <div class="modal-card shop-card">
+      <div class="modal-head">
+        <div>
+          <div id="shop-eyebrow" class="modal-eyebrow">MORALES CUSTOMS</div>
+          <h2 id="shop-title">GARAGE &amp; RESPRAY</h2>
+        </div>
+        <div class="shop-head-right">
+          <span id="shop-cash" class="shop-cash">$12,450</span>
+          <button id="btn-close-shop" class="btn-ghost">EXIT [E / ESC]</button>
+        </div>
+      </div>
+      <div id="shop-items" class="shop-grid"></div>
+    </div>
+  </div>
+
+  <!-- Weapon Wheel Overlay -->
+  <div id="weapon-wheel" class="hidden">
+    <div class="wheel-center">
+      <div id="wheel-selected-name">CARBINE RIFLE</div>
+      <div id="wheel-selected-meta">PRESS 1-6 OR CLICK</div>
+    </div>
+    <div id="wheel-slots"></div>
+  </div>
+
+  <!-- Wasted / Busted Banner -->
+  <div id="status-overlay" class="hidden">
+    <div id="status-headline">FLATLINED</div>
+    <div id="status-detail">Calima General Medical Center · -$450 Hospital Fee</div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>
