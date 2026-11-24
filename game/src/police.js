@@ -1,5 +1,6 @@
-// 5-Star CBPD Tactical Dispatch: escalating cruisers, PIT pursuit, highway roadblocks,
-// SWAT armored enforcers, CALIMA-1 Air One helicopter spotlight pursuit, and evasion timer.
+// 5-Star CBPD Tactical Dispatch: escalating cruisers, PIT pursuit, detailed highway roadblocks
+// with striped barricades, flashing amber cones & armed officers, SWAT enforcers,
+// destructible CALIMA-1 Air One helicopter spotlight pursuit, and evasion timer.
 
 import * as THREE from 'three';
 import { WANTED_TIERS } from './config.js';
@@ -14,6 +15,7 @@ export class PoliceDispatch {
     this.jammerTimer = 0;
     this.units = [];
     this.barricades = [];
+    this.amberBeacons = [];
     this.helicopter = new PoliceHelicopter(scene);
     this.spawnTimer = 0;
   }
@@ -71,29 +73,86 @@ export class PoliceDispatch {
       this.scene.remove(b);
     }
     this.barricades = [];
+    this.amberBeacons = [];
   }
 
-  spawnRoadblockAt(x, z, rotY = 0) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0xff9a3c, roughness: 0.5 });
-    const stripe = new THREE.MeshStandardMaterial({
+  spawnRoadblockAt(x, z, rotY = 0, traffic = null) {
+    const orangeMat = new THREE.MeshStandardMaterial({ color: 0xff6b1a, roughness: 0.48 });
+    const whiteMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      emissive: 0xffd166,
-      emissiveIntensity: 0.65,
+      emissive: 0xffe4b5,
+      emissiveIntensity: 0.45,
     });
-    for (const offset of [-4.5, 0, 4.5]) {
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x262c3d, metalness: 0.5, roughness: 0.5 });
+    const beaconMat = new THREE.MeshStandardMaterial({
+      color: 0xffb703,
+      emissive: 0xff9f1c,
+      emissiveIntensity: 2.8,
+    });
+
+    // 3 detailed striped orange/white police barricades with A-frame legs & flashing beacons
+    for (const offset of [-4.6, 0, 4.6]) {
       const g = new THREE.Group();
       const bx = x + Math.cos(rotY) * offset;
       const bz = z - Math.sin(rotY) * offset;
-      g.position.set(bx, 0.55, bz);
+      g.position.set(bx, 0, bz);
       g.rotation.y = rotY;
-      const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.0, 0.65), mat);
-      body.castShadow = true;
-      g.add(body);
-      const top = new THREE.Mesh(new THREE.BoxGeometry(3.24, 0.25, 0.7), stripe);
-      top.position.y = 0.22;
-      g.add(top);
+
+      for (const lx of [-1.25, 1.25]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.05, 0.72), legMat);
+        leg.position.set(lx, 0.52, 0);
+        g.add(leg);
+      }
+      // Striped plank rails
+      const upper = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.34, 0.16), orangeMat);
+      upper.position.set(0, 0.94, 0);
+      upper.castShadow = true;
+      g.add(upper);
+
+      for (const sx of [-1.05, 0, 1.05]) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.35, 0.19), whiteMat);
+        stripe.position.set(sx, 0.94, 0);
+        g.add(stripe);
+      }
+
+      const lower = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.2, 0.14), whiteMat);
+      lower.position.set(0, 0.48, 0);
+      g.add(lower);
+
+      // Flashing amber top beacon
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), beaconMat.clone());
+      lamp.position.set(0, 1.24, 0);
+      g.add(lamp);
+      this.amberBeacons.push(lamp.material);
+
       this.scene.add(g);
       this.barricades.push(g);
+    }
+
+    // Flashing orange/white traffic cones flanking roadblock approaches
+    for (const cx of [-6.8, -2.3, 2.3, 6.8]) {
+      const coneGroup = new THREE.Group();
+      const bx = x + Math.cos(rotY) * cx - Math.sin(rotY) * -2.2;
+      const bz = z - Math.sin(rotY) * cx - Math.cos(rotY) * -2.2;
+      coneGroup.position.set(bx, 0, bz);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.08, 0.54), legMat);
+      base.position.y = 0.04;
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.78, 8), orangeMat);
+      cone.position.y = 0.44;
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.18, 8), whiteMat);
+      ring.position.y = 0.52;
+      coneGroup.add(base, cone, ring);
+      this.scene.add(coneGroup);
+      this.barricades.push(coneGroup);
+    }
+
+    // Armed CBPD officers taking cover behind the roadblock
+    if (traffic) {
+      for (const ox of [-2.4, 2.4]) {
+        const px = x + Math.cos(rotY) * ox + Math.sin(rotY) * 1.6;
+        const pz = z - Math.sin(rotY) * ox + Math.cos(rotY) * 1.6;
+        traffic.spawnEnemy(px, pz, 'cbpd');
+      }
     }
   }
 
@@ -105,8 +164,12 @@ export class PoliceDispatch {
     return unit;
   }
 
-  update(dt, elapsed, city, player, combat, fx, onPlayerHit) {
+  update(dt, elapsed, city, player, combat, fx, onPlayerHit, audio) {
     if (this.jammerTimer > 0) this.jammerTimer = Math.max(0, this.jammerTimer - dt);
+
+    // Pulse amber roadblock beacons
+    const pulse = Math.sin(elapsed * 9) > 0 ? 3.2 : 0.4;
+    for (const bm of this.amberBeacons) bm.emissiveIntensity = pulse;
 
     if (this.stars === 0) {
       this.helicopter.setActive(false);
@@ -116,7 +179,6 @@ export class PoliceDispatch {
     const tier = this.tier;
     const desiredCount = tier.maxCruisers + tier.interceptors + tier.swat;
 
-    // Clean up far or long-destroyed units
     for (let i = this.units.length - 1; i >= 0; i--) {
       const u = this.units[i];
       const dist = Math.hypot(u.x - player.x, u.z - player.z);
@@ -126,7 +188,6 @@ export class PoliceDispatch {
       }
     }
 
-    // Spawn tactical reinforcements up to tier cap
     this.spawnTimer -= dt;
     if (this.units.length < desiredCount && this.spawnTimer <= 0) {
       this.spawnTimer = 2.4;
@@ -153,11 +214,10 @@ export class PoliceDispatch {
 
     // Helicopter activation at 4★ and 5★
     this.helicopter.setActive(tier.chopper);
-    if (tier.chopper) {
-      this.helicopter.update(dt, elapsed, player.x, player.z, combat, onPlayerHit);
+    if (tier.chopper || this.helicopter.crashing) {
+      this.helicopter.update(dt, elapsed, player.x, player.z, combat, onPlayerHit, audio);
     }
 
-    // Pursuit steering & PIT aggression
     let anyUnitClose = false;
     for (let i = 0; i < this.units.length; i++) {
       const u = this.units[i];
@@ -168,7 +228,6 @@ export class PoliceDispatch {
       const dist = Math.hypot(player.x - u.x, player.z - u.z);
       if (dist < 48) anyUnitClose = true;
 
-      // Predict slightly ahead of moving player for PIT intercept
       const leadX = player.vehicle ? player.x + player.vehicle.vx * 0.4 : player.x;
       const leadZ = player.vehicle ? player.z + player.vehicle.vz * 0.4 : player.z;
       const desiredRot = Math.atan2(leadX - u.x, leadZ - u.z);
@@ -177,7 +236,6 @@ export class PoliceDispatch {
       const throttle = dist > 7 ? (Math.abs(diff) > 1.2 ? 0.35 : 0.92) : 0.15;
       u.stepPhysics(dt, { throttle, steer }, city, fx);
 
-      // Ram collision with player vehicle
       if (player.vehicle && dist < 4.1) {
         const pushX = (player.vehicle.x - u.x) / Math.max(0.5, dist);
         const pushZ = (player.vehicle.z - u.z) / Math.max(0.5, dist);
@@ -187,8 +245,7 @@ export class PoliceDispatch {
       }
     }
 
-    // Line-of-sight escape cooldown when out of sight
-    if (!anyUnitClose && !tier.chopper) {
+    if (!anyUnitClose && (!tier.chopper || !this.helicopter.active)) {
       this.cooldownTimer -= dt * (this.jammerTimer > 0 ? 2.2 : 1);
       if (this.cooldownTimer <= 0) {
         this.stars = Math.max(0, this.stars - 1);

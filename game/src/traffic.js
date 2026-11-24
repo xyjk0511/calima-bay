@@ -1,6 +1,7 @@
-// Living Calima Bay AI: autonomous lane-following civilian traffic, reacting pedestrians
-// on sidewalks & Palma Boardwalk, and hostile Vargas Cartel enforcers.
+// Living Calima Bay AI: autonomous lane-following civilian traffic, killable & reacting pedestrians
+// on sidewalks & Palma Boardwalk, glowing collectible Cash Bundles, and hostile Vargas Cartel enforcers.
 
+import * as THREE from 'three';
 import { WORLD } from './config.js';
 import { Vehicle } from './vehicles.js';
 import { buildHumanoidMesh } from './player.js';
@@ -8,19 +9,35 @@ import { buildHumanoidMesh } from './player.js';
 const CIV_TYPES = ['sunset_gt', 'palma_coupe', 'coral_cabrio', 'bay_taxi', 'mesa_suv'];
 const PED_JACKETS = [0xff6b8b, 0x2cf2e8, 0xffd166, 0x4df0a9, 0xf8fafc, 0xff9a3c, 0xa78bfa];
 
+const cashStackGeo = new THREE.BoxGeometry(0.68, 0.24, 0.38);
+const cashBandGeo = new THREE.BoxGeometry(0.18, 0.26, 0.4);
+const cashRingGeo = new THREE.RingGeometry(0.55, 0.82, 18);
+const cashMat = new THREE.MeshStandardMaterial({
+  color: 0x39e58c,
+  emissive: 0x1fbf6b,
+  emissiveIntensity: 0.9,
+  roughness: 0.35,
+});
+const bandMat = new THREE.MeshStandardMaterial({
+  color: 0xffd166,
+  emissive: 0xffb703,
+  emissiveIntensity: 0.7,
+});
+
 export class TrafficAndNPCManager {
   constructor(scene) {
     this.scene = scene;
     this.vehicles = [];
     this.pedestrians = [];
     this.enemies = [];
+    this.pickups = [];
+    this.pedestriansKilled = 0;
     this._spawnInitialTraffic();
     this._spawnInitialPedestrians();
     this._spawnInitialCartelPatrol();
   }
 
   _spawnInitialTraffic() {
-    // Place 24 civilian vehicles cleanly on avenues & cross-streets
     const lanes = [];
     for (const ax of WORLD.avenuesX) {
       lanes.push({ axis: 'z', fixed: ax + 4.2, dir: 1 });
@@ -33,7 +50,10 @@ export class TrafficAndNPCManager {
 
     for (let i = 0; i < 24; i++) {
       const lane = lanes[i % lanes.length];
-      const pos = -175 + ((i * 67) % 340);
+      const pos =
+        lane.axis === 'z'
+          ? -175 + ((i * 67) % 340)
+          : -190 + ((i * 67) % 270);
       const x = lane.axis === 'z' ? lane.fixed : pos;
       const z = lane.axis === 'z' ? pos : lane.fixed;
       const rotY =
@@ -56,19 +76,24 @@ export class TrafficAndNPCManager {
       this.vehicles.push(veh);
     }
 
-    // Spawn a signature hero Sunset GT parked right near Rico's Palma Strip starting point
+    // Signature hero Sunset GT parked right near Rico's Palma Strip starting point
     const heroCar = new Vehicle(this.scene, 'sunset_gt', 88, -36, 0, 0xff3b5c);
     heroCar.driver = null;
     this.vehicles.push(heroCar);
   }
 
   _spawnInitialPedestrians() {
-    for (let i = 0; i < 36; i++) {
+    for (let i = 0; i < 38; i++) {
       const onBoardwalk = i < 14;
-      const x = onBoardwalk
+      let x = onBoardwalk
         ? 107 + (i % 3) * 1.8
         : WORLD.avenuesX[i % WORLD.avenuesX.length] + (i % 2 === 0 ? 11.2 : -11.2);
-      const z = -170 + ((i * 29) % 340);
+      let z = -170 + ((i * 29) % 340);
+      // Place 3 lively pedestrians right along Rico's Palma Strip starting sidewalk for immediate world feel
+      if (i === 35) { x = 77.5; z = -15; }
+      if (i === 36) { x = 98.5; z = -22; }
+      if (i === 37) { x = 77.5; z = -31; }
+
       const rig = buildHumanoidMesh({
         jacket: PED_JACKETS[i % PED_JACKETS.length],
         shirt: 0xfff8f0,
@@ -85,6 +110,7 @@ export class TrafficAndNPCManager {
         panicTimer: 0,
         alive: true,
         health: 40,
+        maxHealth: 40,
         phase: i * 1.1,
         rig,
       });
@@ -92,8 +118,18 @@ export class TrafficAndNPCManager {
   }
 
   _spawnInitialCartelPatrol() {
-    // Vargas Cartel enforcers patrolling Barrio Coral & Puerto Azul Docks
+    // Immediate street action: Vargas Cartel crews right on the edge of Palma Strip & Solstice Plaza,
+    // plus Barrio Coral, Puerto Azul Docks, and Cayo Brisa Island!
     const spots = [
+      // Palma Strip edge crew (seconds from start!)
+      [74, -56],
+      [69, -62],
+      [77, -66],
+      // Solstice Plaza crew
+      [8, -14],
+      [-7, -22],
+      [13, -28],
+      // Barrio Coral & Puerto Azul Docks
       [-18, -184],
       [14, -192],
       [-56, -172],
@@ -121,8 +157,8 @@ export class TrafficAndNPCManager {
       x,
       z,
       rotY: 0,
-      health: isCop ? 75 : 85,
-      maxHealth: isCop ? 75 : 85,
+      health: isCop ? 75 : 80,
+      maxHealth: isCop ? 75 : 80,
       alive: true,
       faction,
       missionTag,
@@ -133,6 +169,64 @@ export class TrafficAndNPCManager {
     };
     this.enemies.push(enemy);
     return enemy;
+  }
+
+  spawnCashDrop(x, z, amount = 85) {
+    const g = new THREE.Group();
+    const stack = new THREE.Mesh(cashStackGeo, cashMat);
+    stack.position.y = 0.45;
+    const band = new THREE.Mesh(cashBandGeo, bandMat);
+    band.position.y = 0.45;
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x4df0a9,
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const ring = new THREE.Mesh(cashRingGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.1;
+    g.add(stack, band, ring);
+    g.position.set(x, 0.05, z);
+    this.scene.add(g);
+    this.pickups.push({
+      x,
+      z,
+      amount,
+      mesh: g,
+      stack,
+      band,
+      ring,
+      life: 45,
+      phase: Math.random() * Math.PI * 2,
+    });
+    return g;
+  }
+
+  killPedestrian(p, combat, onCrime, player, onKillFeed) {
+    if (!p || !p.alive) return false;
+    p.alive = false;
+    p.health = 0;
+    p.rig.group.rotation.x = Math.PI / 2;
+    p.rig.group.position.y = 0.22;
+    this.pedestriansKilled += 1;
+    if (player) {
+      player.stats.pedestriansKilled = (player.stats.pedestriansKilled || 0) + 1;
+      player.stats.takedowns += 1;
+    }
+    const dropAmt = 45 + Math.floor(Math.random() * 96); // $45-$140
+    this.spawnCashDrop(p.x, p.z, dropAmt);
+    if (combat && combat.spawnHitBurst) {
+      combat.spawnHitBurst(p.x, 1.1, p.z, true);
+    }
+    this.triggerPanicNear(p.x, p.z, 34);
+    if (onCrime) onCrime(44);
+    if (onKillFeed) {
+      onKillFeed(`CIVILIAN DOWN · DROPPED $${dropAmt}`, 'kill');
+    }
+    return true;
   }
 
   triggerPanicNear(x, z, radius = 38) {
@@ -160,13 +254,14 @@ export class TrafficAndNPCManager {
     return best;
   }
 
-  update(dt, city, player, combat, fx, onPlayerHit) {
+  update(dt, city, player, combat, fx, onPlayerHit, hooks = {}) {
+    const { audio, onCrime, onCashPickup, onEnemyKilled, onKillFeed } = hooks;
+
     // Update autonomous civilian vehicles
     for (let i = 0; i < this.vehicles.length; i++) {
       const v = this.vehicles[i];
       if (v.driver === 'player') continue;
       if (v.driver === 'npc' && v.ai && !v.destroyed) {
-        // Check if obstacle or player is directly ahead
         let blocked = false;
         const fwdX = Math.sin(v.rotY);
         const fwdZ = Math.cos(v.rotY);
@@ -197,7 +292,6 @@ export class TrafficAndNPCManager {
         const steer = Math.max(-1, Math.min(1, diff * 2.2));
         v.stepPhysics(dt, { throttle, steer }, city, fx);
 
-        // Wrap smoothly along city perimeter
         if (v.ai.axis === 'z' && Math.abs(v.z) > 205) {
           v.z = -Math.sign(v.z) * 198;
           v.x = v.ai.fixed;
@@ -206,7 +300,6 @@ export class TrafficAndNPCManager {
           v.z = v.ai.fixed;
         }
       } else {
-        // Coasting parked / wrecked vehicle
         v.stepPhysics(dt, { throttle: 0, steer: 0 }, city, fx);
       }
     }
@@ -228,13 +321,11 @@ export class TrafficAndNPCManager {
         p.rotY += Math.PI * 0.65;
       }
 
-      // Vehicle hit check
-      if (player.vehicle && player.vehicle.speed > 11) {
-        if (Math.hypot(player.vehicle.x - p.x, player.vehicle.z - p.z) < 2.3) {
-          p.alive = false;
-          p.rig.group.rotation.x = Math.PI / 2;
-          p.rig.group.position.y = 0.22;
-          if (fx) fx.spawnSparks(p.x, 0.8, p.z, 5);
+      // Vehicle hit check (now awards cash drop + escalates CBPD heat!)
+      if (player.vehicle && player.vehicle.speed > 9) {
+        if (Math.hypot(player.vehicle.x - p.x, player.vehicle.z - p.z) < 2.5) {
+          this.killPedestrian(p, combat, onCrime, player, onKillFeed);
+          if (audio) audio.playHitConfirm(true, false);
           continue;
         }
       }
@@ -252,10 +343,26 @@ export class TrafficAndNPCManager {
     // Update hostile Vargas Cartel & CBPD foot units
     for (const e of this.enemies) {
       if (!e.alive) continue;
+
+      // Vehicle run-over check for enemies too!
+      if (player.vehicle && player.vehicle.speed > 10) {
+        if (Math.hypot(player.vehicle.x - e.x, player.vehicle.z - e.z) < 2.4) {
+          e.health = 0;
+          e.alive = false;
+          e.rig.group.rotation.x = Math.PI / 2;
+          e.rig.group.position.y = 0.24;
+          this.spawnCashDrop(e.x, e.z, 95);
+          if (combat && combat.spawnHitBurst) combat.spawnHitBurst(e.x, 1.1, e.z, true);
+          if (audio) audio.playHitConfirm(true, false);
+          if (onEnemyKilled) onEnemyKilled(e);
+          if (onCrime) onCrime(e.faction === 'cbpd' ? 85 : 35);
+          continue;
+        }
+      }
+
       const dist = Math.hypot(player.x - e.x, player.z - e.z);
       if (dist < 62 && !player.dead) {
         e.rotY = Math.atan2(player.x - e.x, player.z - e.z);
-        // Strafe or close distance
         const moveAngle = dist > 26 ? e.rotY : e.rotY + (Math.PI / 2) * e.strafeDir;
         e.x += Math.sin(moveAngle) * 3.8 * dt;
         e.z += Math.cos(moveAngle) * 3.8 * dt;
@@ -290,6 +397,38 @@ export class TrafficAndNPCManager {
       }
       e.rig.group.position.set(e.x, city.getGroundHeight(e.x, e.z), e.z);
       e.rig.group.rotation.y = e.rotY;
+    }
+
+    // Update & auto-collect spinning Cash Bundle drops
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const pk = this.pickups[i];
+      pk.life -= dt;
+      pk.phase += dt * 3.2;
+      pk.stack.rotation.y = pk.phase;
+      pk.band.rotation.y = pk.phase;
+      const bob = 0.48 + Math.sin(pk.phase * 1.4) * 0.14;
+      pk.stack.position.y = bob;
+      pk.band.position.y = bob;
+      const sc = 1 + Math.sin(pk.phase * 2) * 0.12;
+      pk.ring.scale.set(sc, sc, 1);
+
+      const collectDist = player.vehicle ? 4.4 : 2.8;
+      const d = Math.hypot(player.x - pk.x, player.z - pk.z);
+      if (d < collectDist && !player.dead) {
+        player.cash += pk.amount;
+        if (audio) audio.playCashPickup();
+        if (onCashPickup) onCashPickup(pk.amount);
+        this.scene.remove(pk.mesh);
+        pk.ring.material.dispose();
+        this.pickups.splice(i, 1);
+        continue;
+      }
+
+      if (pk.life <= 0) {
+        this.scene.remove(pk.mesh);
+        pk.ring.material.dispose();
+        this.pickups.splice(i, 1);
+      }
     }
   }
 }

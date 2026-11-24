@@ -1,36 +1,46 @@
 // Rico Vega protagonist: articulated 3D character mesh, on-foot & vehicle controls,
-// weapon inventory, third-person over-shoulder & speed-reactive vehicle chase camera.
+// weapon inventory, ADS over-shoulder aiming, subtle recoil kick, and dynamic chase camera.
 
 import * as THREE from 'three';
 import { WEAPONS } from './config.js';
 
 export function buildHumanoidMesh(palette) {
   const g = new THREE.Group();
-  const skinMat = new THREE.MeshStandardMaterial({ color: palette.skin || 0xd49a73, roughness: 0.65 });
-  const jacketMat = new THREE.MeshStandardMaterial({ color: palette.jacket, roughness: 0.5 });
-  const shirtMat = new THREE.MeshStandardMaterial({ color: palette.shirt || 0x2cf2e8, roughness: 0.55 });
-  const pantsMat = new THREE.MeshStandardMaterial({ color: palette.pants || 0x1e2436, roughness: 0.72 });
-  const hairMat = new THREE.MeshStandardMaterial({ color: palette.hair || 0x1a1412, roughness: 0.85 });
-  const shoeMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fc, roughness: 0.5 });
+  const skinMat = new THREE.MeshStandardMaterial({ color: palette.skin || 0xd49a73, roughness: 0.62 });
+  const jacketMat = new THREE.MeshStandardMaterial({ color: palette.jacket, roughness: 0.44, metalness: 0.08 });
+  const shirtMat = new THREE.MeshStandardMaterial({ color: palette.shirt || 0x2cf2e8, roughness: 0.52 });
+  const pantsMat = new THREE.MeshStandardMaterial({ color: palette.pants || 0x1e2436, roughness: 0.7 });
+  const hairMat = new THREE.MeshStandardMaterial({ color: palette.hair || 0x1a1412, roughness: 0.82 });
+  const shoeMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fc, roughness: 0.45 });
+  const beltMat = new THREE.MeshStandardMaterial({ color: 0x151822, roughness: 0.5, metalness: 0.4 });
 
-  // Sculpted tapered torso & jacket shoulders
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.25, 0.72, 10), jacketMat);
+  // Sculpted tapered torso, collar & jacket shoulders
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.24, 0.72, 12), jacketMat);
   torso.scale.set(1.08, 1, 0.64);
   torso.position.y = 1.24;
   torso.castShadow = true;
   g.add(torso);
 
-  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), jacketMat);
-  shoulders.scale.set(1.12, 0.38, 0.66);
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), jacketMat);
+  shoulders.scale.set(1.14, 0.38, 0.66);
   shoulders.position.y = 1.56;
   g.add(shoulders);
 
-  // Inner shirt front
+  // Inner shirt front & tactical belt
   const shirt = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.64, 0.34), shirtMat);
   shirt.position.set(0, 1.24, 0.05);
   g.add(shirt);
 
-  // Sculpted head + styled hair + shades
+  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.255, 0.255, 0.1, 10), beltMat);
+  belt.scale.set(1.08, 1, 0.68);
+  belt.position.y = 0.89;
+  g.add(belt);
+
+  // Neck + sculpted head + styled hair + shades
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.14, 8), skinMat);
+  neck.position.y = 1.65;
+  g.add(neck);
+
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), skinMat);
   head.scale.set(0.92, 1.08, 0.96);
   head.position.y = 1.84;
@@ -45,36 +55,46 @@ export function buildHumanoidMesh(palette) {
   if (palette.shades) {
     const shades = new THREE.Mesh(
       new THREE.BoxGeometry(0.3, 0.08, 0.08),
-      new THREE.MeshStandardMaterial({ color: 0x0b0d16, metalness: 0.85, roughness: 0.12 }),
+      new THREE.MeshStandardMaterial({ color: 0x0b0d16, metalness: 0.88, roughness: 0.1 }),
     );
     shades.position.set(0, 1.86, 0.17);
     g.add(shades);
   }
 
   // Sculpted cylindrical arms + hands
-  const armGeo = new THREE.CylinderGeometry(0.085, 0.072, 0.6, 8);
-  armGeo.translate(0, -0.28, 0);
+  const armGeo = new THREE.CylinderGeometry(0.085, 0.072, 0.56, 8);
+  armGeo.translate(0, -0.26, 0);
+  const handGeo = new THREE.SphereGeometry(0.072, 8, 6);
+
   const leftArm = new THREE.Mesh(armGeo, jacketMat);
   leftArm.position.set(-0.38, 1.52, 0);
   leftArm.castShadow = true;
+  const lHand = new THREE.Mesh(handGeo, skinMat);
+  lHand.position.set(0, -0.56, 0);
+  leftArm.add(lHand);
   g.add(leftArm);
 
   const rightArm = new THREE.Mesh(armGeo, jacketMat);
   rightArm.position.set(0.38, 1.52, 0);
   rightArm.castShadow = true;
+  const rHand = new THREE.Mesh(handGeo, skinMat);
+  rHand.position.set(0, -0.56, 0);
+  rightArm.add(rHand);
   g.add(rightArm);
 
-  // Detailed Carbine / Tactical Weapon attached to right arm
+  // Detailed Tactical Carbine Weapon attached to right arm
   const gun = new THREE.Group();
-  const gunMat = new THREE.MeshStandardMaterial({ color: 0x202636, metalness: 0.72, roughness: 0.28 });
-  const accentMat = new THREE.MeshStandardMaterial({ color: 0x4b5563, metalness: 0.6, roughness: 0.35 });
-  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.56), gunMat);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.42, 8), accentMat);
+  const gunMat = new THREE.MeshStandardMaterial({ color: 0x1d2332, metalness: 0.78, roughness: 0.24 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: 0x525d70, metalness: 0.65, roughness: 0.32 });
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.58), gunMat);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.44, 8), accentMat);
   barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 0.02, 0.42);
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.09), accentMat);
-  mag.position.set(0, -0.12, 0.06);
-  gun.add(receiver, barrel, mag);
+  barrel.position.set(0, 0.02, 0.44);
+  const optic = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.16), accentMat);
+  optic.position.set(0, 0.1, 0.04);
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.09), accentMat);
+  mag.position.set(0, -0.13, 0.07);
+  gun.add(receiver, barrel, optic, mag);
   gun.position.set(0, -0.52, 0.36);
   gun.visible = !!palette.armed;
   rightArm.add(gun);
@@ -110,7 +130,8 @@ export class Player {
     this.vy = 0;
     this.rotY = 0;
     this.camYaw = 0;
-    this.camPitch = 0.22;
+    this.camPitch = 0.18;
+    this.recoilPitch = 0;
     this.health = 100;
     this.maxHealth = 100;
     this.armor = 60;
@@ -121,6 +142,7 @@ export class Player {
     this.walkPhase = 0;
     this.aiming = false;
     this.fireCooldown = 0;
+    this.grenadeCooldown = 0;
     this.dead = false;
     this.respawnTimer = 0;
     this.damageFlash = 0;
@@ -130,14 +152,21 @@ export class Player {
       missionsDone: 0,
       stuntsDone: 0,
       takedowns: 0,
+      pedestriansKilled: 0,
+      choppersDowned: 0,
       carsBoosted: 0,
     };
 
-    // Weapon inventory
+    // Weapon inventory (Baton, Pistol, SMG, Carbine & starter Grenades ready out of the box!)
     this.weapons = WEAPONS.map((w) => ({
       ...w,
-      owned: w.id === 'baton' || w.id === 'pistol' || w.id === 'smg' || w.id === 'carbine',
-      ammo: w.melee ? 0 : Math.round(w.maxAmmo * 0.75),
+      owned:
+        w.id === 'baton' ||
+        w.id === 'pistol' ||
+        w.id === 'smg' ||
+        w.id === 'carbine' ||
+        w.id === 'grenade',
+      ammo: w.melee ? 0 : w.id === 'grenade' ? 6 : Math.round(w.maxAmmo * 0.75),
       mag: w.magSize,
     }));
     this.weaponIndex = 4; // Start equipped with Carbine Rifle for immediate punch
@@ -157,6 +186,16 @@ export class Player {
 
   get currentWeapon() {
     return this.weapons[this.weaponIndex];
+  }
+
+  get driveByWeapon() {
+    const smg = this.weapons.find((w) => w.id === 'smg' && w.owned && w.ammo > 0);
+    if (smg) return smg;
+    return this.weapons.find((w) => w.id === 'pistol' && w.owned) || this.weapons[1];
+  }
+
+  addRecoil(amount = 0.035) {
+    this.recoilPitch = Math.min(0.14, this.recoilPitch + amount);
   }
 
   selectWeapon(index) {
@@ -224,7 +263,9 @@ export class Player {
   update(dt, input, city, vehicles, fx, onStuntJump) {
     if (this.damageFlash > 0) this.damageFlash = Math.max(0, this.damageFlash - dt);
     if (this.fireCooldown > 0) this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    if (this.grenadeCooldown > 0) this.grenadeCooldown = Math.max(0, this.grenadeCooldown - dt);
     if (this.crewCooldown > 0) this.crewCooldown = Math.max(0, this.crewCooldown - dt);
+    if (this.recoilPitch > 0) this.recoilPitch = Math.max(0, this.recoilPitch - dt * 0.38);
 
     if (this.dead) {
       this.respawnTimer -= dt;
@@ -247,8 +288,8 @@ export class Player {
       this.z = v.z;
       this.rotY = v.rotY;
 
-      // Smoothly follow vehicle heading with slight lag unless mouse moved
-      if (!input.mouseLookActive) {
+      // Smoothly follow vehicle heading with slight lag unless mouse aiming/firing
+      if (!input.mouseLookActive && !input.fire && !this.aiming) {
         const diff = Math.atan2(Math.sin(v.rotY - this.camYaw), Math.cos(v.rotY - this.camYaw));
         this.camYaw += diff * Math.min(1, dt * 4.2);
       }
@@ -263,7 +304,7 @@ export class Player {
     // On-foot movement relative to camera yaw
     const moveF = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
     const moveR = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const speed = input.shift ? 13.5 : 8.2;
+    const speed = input.shift ? 13.5 : this.aiming ? 6.0 : 8.4;
     const fwdX = Math.sin(this.camYaw);
     const fwdZ = Math.cos(this.camYaw);
     const rightX = -Math.cos(this.camYaw);
@@ -277,12 +318,13 @@ export class Player {
       dz /= len;
       this.x += dx * speed * dt;
       this.z += dz * speed * dt;
-      const targetRot = Math.atan2(dx, dz);
+      const targetRot = input.fire || this.aiming ? this.camYaw : Math.atan2(dx, dz);
       const diff = Math.atan2(Math.sin(targetRot - this.rotY), Math.cos(targetRot - this.rotY));
-      this.rotY += diff * Math.min(1, dt * 12);
+      this.rotY += diff * Math.min(1, dt * 14);
       this.walkPhase += dt * (input.shift ? 13 : 9);
     } else if (input.fire || this.aiming) {
-      this.rotY = this.camYaw;
+      const diff = Math.atan2(Math.sin(this.camYaw - this.rotY), Math.cos(this.camYaw - this.rotY));
+      this.rotY += diff * Math.min(1, dt * 18);
     }
 
     // Jump & gravity
@@ -319,7 +361,7 @@ export class Player {
     this.rig.rightLeg.rotation.x = -swing;
     this.rig.leftArm.rotation.x = -swing * 0.7;
     if (input.fire || this.aiming || !this.currentWeapon.melee) {
-      this.rig.rightArm.rotation.x = -Math.PI * 0.46;
+      this.rig.rightArm.rotation.x = -Math.PI * 0.48 - this.recoilPitch * 1.4;
       this.rig.gun.visible = !this.currentWeapon.melee;
     } else {
       this.rig.rightArm.rotation.x = swing * 0.7;
@@ -331,35 +373,48 @@ export class Player {
   }
 
   updateCamera(camera, dt) {
+    // Smooth ADS FOV zoom on foot or drive-by aiming
+    const targetFov = !this.vehicle && this.aiming ? 46 : this.vehicle && this.vehicle.nitroActive ? 70 : 62;
+    if (Math.abs(camera.fov - targetFov) > 0.05) {
+      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 10);
+      camera.updateProjectionMatrix();
+    }
+
+    const pitch = this.camPitch - this.recoilPitch;
+
     if (this.vehicle) {
       const v = this.vehicle;
       const spdRatio = Math.min(1, v.speed / 55);
       const dist = 10.2 + spdRatio * 3.2;
-      const height = 4.3 + spdRatio * 1.1;
+      const height = 4.2 + spdRatio * 1.1 + Math.sin(pitch) * 2.4;
       const targetX = v.x - Math.sin(this.camYaw) * dist;
       const targetZ = v.z - Math.cos(this.camYaw) * dist;
       const targetY = v.y + height;
 
-      camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 7.5);
-      camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 7.5);
-      camera.position.z += (targetZ - camera.position.z) * Math.min(1, dt * 7.5);
-      camera.lookAt(v.x + Math.sin(v.rotY) * 5, v.y + 1.5, v.z + Math.cos(v.rotY) * 5);
+      camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 8.5);
+      camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 8.5);
+      camera.position.z += (targetZ - camera.position.z) * Math.min(1, dt * 8.5);
+      camera.lookAt(
+        v.x + Math.sin(this.camYaw) * 14,
+        v.y + 1.5 - Math.sin(pitch) * 4.5,
+        v.z + Math.cos(this.camYaw) * 14,
+      );
     } else {
-      const dist = 5.4;
-      const rightOff = 1.15;
+      const dist = this.aiming ? 3.5 : 5.2;
+      const rightOff = this.aiming ? 0.92 : 1.05;
       const sinY = Math.sin(this.camYaw);
       const cosY = Math.cos(this.camYaw);
       const targetX = this.x - sinY * dist - cosY * rightOff;
       const targetZ = this.z - cosY * dist + sinY * rightOff;
-      const targetY = this.y + 2.55 + Math.sin(this.camPitch) * 2.2;
+      const targetY = this.y + (this.aiming ? 2.05 : 2.45) + Math.sin(pitch) * 2.2;
 
-      camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 11);
-      camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 11);
-      camera.position.z += (targetZ - camera.position.z) * Math.min(1, dt * 11);
+      camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 14);
+      camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 14);
+      camera.position.z += (targetZ - camera.position.z) * Math.min(1, dt * 14);
       camera.lookAt(
-        this.x + sinY * 14,
-        this.y + 1.65 - Math.sin(this.camPitch) * 4.5,
-        this.z + cosY * 14,
+        this.x + sinY * 22,
+        this.y + 1.6 - Math.sin(pitch) * 8.5,
+        this.z + cosY * 22,
       );
     }
   }

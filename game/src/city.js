@@ -1,6 +1,8 @@
-// Calima Bay 3D world builder: sky dome, animated turquoise ocean, Palma Beach & boardwalk,
-// 6 distinct districts with 120+ procedural buildings & neon signage, Puerto Azul harbor cranes,
-// Cayo Brisa Causeway bridge & lighthouse, 8 glowing stunt ramps, shop markers, and AABB colliders.
+// Calima Bay 3D world builder (v2 Visual Overhaul): sunset gradient sky dome, shimmering ocean
+// with animated sun-reflection path, layered surf foam, 6 detailed 3D harbor yachts & sailboats,
+// arched multi-segment 3D palm trees, 120+ sunlit Art-Deco & glass buildings with framed 3D neon
+// marquee signs & rooftop spires, wet-sheen asphalt roads with streetlamp glow pools,
+// Puerto Azul harbor cranes, Cayo Brisa Causeway & Lighthouse, stunt ramps, and AABB colliders.
 
 import * as THREE from 'three';
 import { WORLD, TIME_PRESETS, SHOPS, STUNT_RAMPS } from './config.js';
@@ -32,12 +34,13 @@ export class CalimaCity {
     this.shopBeacons = [];
     this.neonMaterials = [];
     this.palmTrees = [];
+    this.yachts = [];
+    this.surfFoams = [];
     this.waterMesh = null;
     this.waterGeo = null;
     this.waterBaseY = null;
+    this.sunGlintMesh = null;
     this.skyUniforms = null;
-    this.sunDisc = null;
-    this.sunGlow = null;
     this.lights = {};
     this.lighthouseBeam = null;
 
@@ -45,6 +48,7 @@ export class CalimaCity {
     this._buildSkyAndWater();
     this._buildTerrainAndRoads();
     this._buildCausewayAndIsland();
+    this._buildHarborYachts();
     this._buildDistrictBuildings();
     this._buildHarborProps();
     this._buildBeachAndPalms();
@@ -55,13 +59,13 @@ export class CalimaCity {
   }
 
   _buildLighting() {
-    this.lights.ambient = new THREE.AmbientLight(0xffb38a, 0.8);
+    this.lights.ambient = new THREE.AmbientLight(0xffb38a, 0.82);
     this.scene.add(this.lights.ambient);
 
-    this.lights.hemi = new THREE.HemisphereLight(0xff8a65, 0x2a2444, 0.75);
+    this.lights.hemi = new THREE.HemisphereLight(0xff8a65, 0x2a2444, 0.78);
     this.scene.add(this.lights.hemi);
 
-    const sun = new THREE.DirectionalLight(0xffe49e, 2.35);
+    const sun = new THREE.DirectionalLight(0xffe49e, 2.4);
     sun.position.set(260, 56, -150);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -75,15 +79,13 @@ export class CalimaCity {
     this.scene.add(sun);
     this.lights.sun = sun;
 
-    // Warm rim bounce from sunset side
-    const rim = new THREE.DirectionalLight(0x36e6dc, 0.55);
+    const rim = new THREE.DirectionalLight(0x36e6dc, 0.62);
     rim.position.set(-180, 75, 160);
     this.scene.add(rim);
     this.lights.rim = rim;
   }
 
   _buildSkyAndWater() {
-    // Procedural shader sky dome with sunset gradient & soft atmospheric glow
     this.skyUniforms = {
       uTop: { value: new THREE.Color(0x1c1747) },
       uMid: { value: new THREE.Color(0xb83b6e) },
@@ -117,8 +119,8 @@ export class CalimaCity {
           vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.24, h));
           col = mix(col, uTop, smoothstep(0.22, 0.78, h));
           float sunAmt = max(dot(dir, uSunDir), 0.0);
-          col += uSunColor * pow(sunAmt, 14.0) * 0.55;
-          col += vec3(1.0, 0.96, 0.85) * smoothstep(0.996, 0.9992, sunAmt) * 1.4;
+          col += uSunColor * pow(sunAmt, 14.0) * 0.58;
+          col += vec3(1.0, 0.96, 0.85) * smoothstep(0.996, 0.9992, sunAmt) * 1.45;
           gl_FragColor = vec4(col, 1.0);
         }
       `,
@@ -161,10 +163,10 @@ export class CalimaCity {
     }
     const waterMat = new THREE.MeshStandardMaterial({
       color: 0x1295a8,
-      roughness: 0.16,
-      metalness: 0.35,
+      roughness: 0.12,
+      metalness: 0.45,
       emissive: 0x093a4d,
-      emissiveIntensity: 0.45,
+      emissiveIntensity: 0.42,
     });
     const water = new THREE.Mesh(waterGeo, waterMat);
     water.position.set(160, -1.15, 20);
@@ -172,34 +174,71 @@ export class CalimaCity {
     this.scene.add(water);
     this.waterMesh = water;
     this.waterGeo = waterGeo;
+
+    // Animated glinting sunset sun-reflection shimmer path across Calima Bay water!
+    this.glintUniforms = {
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color(0xffc978) },
+    };
+    const glintMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: this.glintUniforms,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        void main() {
+          float center = 1.0 - abs(vUv.x - 0.5) * 2.0;
+          center = pow(max(center, 0.0), 2.4);
+          float ripples = sin(vUv.y * 95.0 - uTime * 3.8 + sin(vUv.x * 22.0) * 2.0) * 0.5 + 0.5;
+          float spark = smoothstep(0.45, 0.95, ripples);
+          float fade = smoothstep(0.0, 0.18, vUv.y) * smoothstep(1.0, 0.15, vUv.y);
+          float alpha = center * (0.22 + spark * 0.48) * fade;
+          gl_FragColor = vec4(uColor, alpha);
+        }
+      `,
+    });
+    const sunGlint = new THREE.Mesh(new THREE.PlaneGeometry(92, 460), glintMat);
+    sunGlint.rotation.x = -Math.PI / 2;
+    sunGlint.rotation.z = -0.42;
+    sunGlint.position.set(270, -0.78, -95);
+    this.scene.add(sunGlint);
+    this.sunGlintMesh = sunGlint;
   }
 
   _buildTerrainAndRoads() {
-    // Mainland landmass
     const sidewalkTex = createSidewalkTexture();
     const groundMat = new THREE.MeshStandardMaterial({
       map: sidewalkTex,
-      roughness: 0.9,
-      metalness: 0.04,
+      roughness: 0.88,
+      metalness: 0.05,
     });
     const mainland = new THREE.Mesh(new THREE.BoxGeometry(386, 2.2, 488), groundMat);
     mainland.position.set(-77, -1.1, -24);
     mainland.receiveShadow = true;
     this.scene.add(mainland);
 
-    // Harbor concrete seawall rim along South Bay & East Boardwalk
     const wallMat = new THREE.MeshStandardMaterial({ color: 0x767f91, roughness: 0.8 });
     const southWall = new THREE.Mesh(new THREE.BoxGeometry(388, 2.4, 4), wallMat);
     southWall.position.set(-77, -0.8, 220);
     southWall.receiveShadow = true;
     this.scene.add(southWall);
 
-    // Golden Palma Beach sloping smoothly into the turquoise bay (below Causeway road deck)
+    // Golden Palma Beach sloping smoothly into the turquoise bay
     const beachTex = createBeachTexture();
     const beachMat = new THREE.MeshStandardMaterial({
       map: beachTex,
-      roughness: 0.92,
-      metalness: 0.02,
+      roughness: 0.9,
+      metalness: 0.03,
     });
     const beach = new THREE.Mesh(new THREE.BoxGeometry(52, 1.0, 488), beachMat);
     beach.rotation.z = -0.042;
@@ -207,16 +246,25 @@ export class CalimaCity {
     beach.receiveShadow = true;
     this.scene.add(beach);
 
-    // Subtle shimmering surf foam ribbon along the shoreline
-    const foamMat = new THREE.MeshBasicMaterial({
-      color: 0xdffbff,
-      transparent: true,
-      opacity: 0.42,
-    });
-    const surfFoam = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 486), foamMat);
-    surfFoam.rotation.x = -Math.PI / 2;
-    surfFoam.position.set(154.5, -0.86, -24);
-    this.scene.add(surfFoam);
+    // Multi-layered bright animated white surf foam bands along Palma Beach shoreline!
+    const foamConfigs = [
+      { x: 153.2, y: -0.86, w: 3.4, op: 0.56, phase: 0 },
+      { x: 157.8, y: -0.88, w: 2.2, op: 0.38, phase: 1.8 },
+      { x: 162.5, y: -0.9, w: 1.5, op: 0.24, phase: 3.6 },
+    ];
+    for (const fc of foamConfigs) {
+      const fm = new THREE.MeshBasicMaterial({
+        color: 0xf0fdff,
+        transparent: true,
+        opacity: fc.op,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(fc.w, 486), fm);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(fc.x, fc.y, -24);
+      this.scene.add(mesh);
+      this.surfFoams.push({ mesh, baseX: fc.x, baseOp: fc.op, phase: fc.phase });
+    }
 
     // Palma Boardwalk timber deck separating Strip & Beach (split cleanly for Causeway at Z=40)
     const boardMat = new THREE.MeshStandardMaterial({ color: 0xa47148, roughness: 0.82 });
@@ -229,16 +277,27 @@ export class CalimaCity {
     bwSouth.receiveShadow = true;
     this.scene.add(bwSouth);
 
-    // Road asphalt grid
+    // Glossy coastal wet-sheen asphalt road grid
     const roadTexV = createRoadTexture(true);
     const roadTexH = createRoadTexture(false);
     const interTex = createIntersectionTexture();
 
-    const roadMatV = new THREE.MeshStandardMaterial({ map: roadTexV, roughness: 0.78 });
-    const roadMatH = new THREE.MeshStandardMaterial({ map: roadTexH, roughness: 0.78 });
-    const interMat = new THREE.MeshStandardMaterial({ map: interTex, roughness: 0.78 });
+    const roadMatV = new THREE.MeshStandardMaterial({
+      map: roadTexV,
+      roughness: 0.38,
+      metalness: 0.18,
+    });
+    const roadMatH = new THREE.MeshStandardMaterial({
+      map: roadTexH,
+      roughness: 0.38,
+      metalness: 0.18,
+    });
+    const interMat = new THREE.MeshStandardMaterial({
+      map: interTex,
+      roughness: 0.38,
+      metalness: 0.18,
+    });
 
-    // North-South Avenues
     for (const ax of WORLD.avenuesX) {
       for (let i = 0; i < WORLD.streetsZ.length - 1; i++) {
         const z1 = WORLD.streetsZ[i] + WORLD.roadWidth * 0.5;
@@ -256,7 +315,6 @@ export class CalimaCity {
       }
     }
 
-    // East-West Streets
     for (const sz of WORLD.streetsZ) {
       for (let i = 0; i < WORLD.avenuesX.length - 1; i++) {
         const x1 = WORLD.avenuesX[i] + WORLD.roadWidth * 0.5;
@@ -274,7 +332,6 @@ export class CalimaCity {
       }
     }
 
-    // Intersections
     for (const ax of WORLD.avenuesX) {
       for (const sz of WORLD.streetsZ) {
         const mesh = new THREE.Mesh(
@@ -290,51 +347,46 @@ export class CalimaCity {
   }
 
   _buildCausewayAndIsland() {
-    // Seamless flush approach road connecting Palma Strip (X=96) into Cayo Brisa Causeway
     const roadTexH = createRoadTexture(false);
     roadTexH.repeat.set(10, 1);
-    const deckMat = new THREE.MeshStandardMaterial({ map: roadTexH, roughness: 0.72 });
+    const deckMat = new THREE.MeshStandardMaterial({
+      map: roadTexH,
+      roughness: 0.36,
+      metalness: 0.18,
+    });
 
-    const approach = new THREE.Mesh(new THREE.BoxGeometry(24, 0.72, 16), deckMat);
-    approach.position.set(108, 0.08, WORLD.causewayZ);
-    approach.rotation.z = 0.018;
-    approach.receiveShadow = true;
-    this.scene.add(approach);
-
-    // Main Causeway bridge deck spanning the turquoise bay
-    const deckStart = 117;
+    // Single seamless flush causeway deck from Palma Strip (X=96) straight to Cayo Brisa Island
+    const deckStart = 96;
     const deckLen = WORLD.causewayEndX - deckStart;
     const deck = new THREE.Mesh(new THREE.BoxGeometry(deckLen, 0.8, 16), deckMat);
-    deck.position.set((deckStart + WORLD.causewayEndX) * 0.5, 0.34, WORLD.causewayZ);
+    deck.position.set((deckStart + WORLD.causewayEndX) * 0.5, 0.28, WORLD.causewayZ);
     deck.receiveShadow = true;
     this.scene.add(deck);
 
-    // Bridge concrete piers & glowing neon arch pylons
-    const pillarMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.65 });
-    const railMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.5 });
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.6 });
+    const railMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.45 });
     const neonTrimMat = new THREE.MeshStandardMaterial({
       color: 0x2cf2e8,
       emissive: 0x2cf2e8,
-      emissiveIntensity: 1.4,
+      emissiveIntensity: 1.45,
     });
     this.neonMaterials.push(neonTrimMat);
 
     for (const side of [-7.6, 7.6]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(deckLen + 14, 1.0, 0.5), railMat);
-      rail.position.set((deckStart - 14 + WORLD.causewayEndX) * 0.5, 1.0, WORLD.causewayZ + side);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(deckLen - 14, 1.0, 0.5), railMat);
+      rail.position.set((deckStart + 14 + WORLD.causewayEndX) * 0.5, 0.96, WORLD.causewayZ + side);
       this.scene.add(rail);
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(deckLen + 14, 0.22, 0.56), neonTrimMat);
-      strip.position.set((deckStart - 14 + WORLD.causewayEndX) * 0.5, 1.42, WORLD.causewayZ + side);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(deckLen - 14, 0.22, 0.56), neonTrimMat);
+      strip.position.set((deckStart + 14 + WORLD.causewayEndX) * 0.5, 1.38, WORLD.causewayZ + side);
       this.scene.add(strip);
     }
 
-    for (let x = deckStart + 12; x <= WORLD.causewayEndX - 16; x += 28) {
+    for (let x = 128; x <= WORLD.causewayEndX - 16; x += 28) {
       const pier = new THREE.Mesh(new THREE.BoxGeometry(3.2, 6, 14), pillarMat);
       pier.position.set(x, -2.8, WORLD.causewayZ);
       this.scene.add(pier);
     }
 
-    // Twin iconic bridge arches over the channel
     for (const ax of [162, 206]) {
       const arch = new THREE.Mesh(
         new THREE.TorusGeometry(9.2, 0.6, 10, 28, Math.PI),
@@ -361,8 +413,8 @@ export class CalimaCity {
     // Iconic Calima Bay Lighthouse on Cayo Brisa Island
     const lhX = 304;
     const lhZ = 22;
-    const lhWhite = new THREE.MeshStandardMaterial({ color: 0xfff8f0, roughness: 0.5 });
-    const lhCoral = new THREE.MeshStandardMaterial({ color: 0xff5e6c, roughness: 0.5 });
+    const lhWhite = new THREE.MeshStandardMaterial({ color: 0xfff8f0, roughness: 0.45 });
+    const lhCoral = new THREE.MeshStandardMaterial({ color: 0xff5e6c, roughness: 0.45 });
     const base = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 4.4, 8, 14), lhWhite);
     base.position.set(lhX, 4.5, lhZ);
     base.castShadow = true;
@@ -379,7 +431,7 @@ export class CalimaCity {
     const lanternMat = new THREE.MeshStandardMaterial({
       color: 0xfff3b0,
       emissive: 0xffd166,
-      emissiveIntensity: 2.4,
+      emissiveIntensity: 2.5,
     });
     this.neonMaterials.push(lanternMat);
     const lantern = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 3.2, 12), lanternMat);
@@ -390,7 +442,6 @@ export class CalimaCity {
     cap.position.set(lhX, 25.8, lhZ);
     this.scene.add(cap);
 
-    // Rotating volumetric lighthouse beam
     const beamGeo = new THREE.ConeGeometry(7, 65, 16, 1, true);
     beamGeo.rotateZ(Math.PI / 2);
     beamGeo.translate(32.5, 0, 0);
@@ -412,8 +463,164 @@ export class CalimaCity {
     this.buildings.push({ x: lhX, z: lhZ, w: 9, d: 9, color: '#ff5e6c' });
   }
 
+  _buildHarborYachts() {
+    // 6 detailed 3D white motor-yachts & sailboats bobbing in Calima Bay near the causeway,
+    // Palma Beach, and Cayo Brisa Lighthouse!
+    const hullWhite = new THREE.MeshStandardMaterial({ color: 0xf8fbff, roughness: 0.25, metalness: 0.18 });
+    const stripeNavy = new THREE.MeshStandardMaterial({ color: 0x163861, roughness: 0.3, metalness: 0.35 });
+    const stripeCyan = new THREE.MeshStandardMaterial({ color: 0x17b8c9, roughness: 0.28, metalness: 0.35 });
+    const teakMat = new THREE.MeshStandardMaterial({ color: 0xb98350, roughness: 0.72 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x101c33, metalness: 0.9, roughness: 0.1 });
+    const sailMat = new THREE.MeshStandardMaterial({
+      color: 0xfffaf2,
+      roughness: 0.65,
+      side: THREE.DoubleSide,
+    });
+    const cabinGlow = new THREE.MeshStandardMaterial({
+      color: 0xffe299,
+      emissive: 0xffc864,
+      emissiveIntensity: 1.6,
+    });
+    this.neonMaterials.push(cabinGlow);
+
+    const buildMotorYacht = (scale = 1, accentMat = stripeNavy) => {
+      const g = new THREE.Group();
+      // Tapered sculpted hull
+      const hullShape = new THREE.Shape();
+      hullShape.moveTo(-5.8, 0);
+      hullShape.lineTo(3.8, 0);
+      hullShape.lineTo(6.6, 1.35);
+      hullShape.lineTo(5.2, 1.65);
+      hullShape.lineTo(-5.8, 1.45);
+      hullShape.closePath();
+      const hullGeo = new THREE.ExtrudeGeometry(hullShape, {
+        depth: 3.4,
+        bevelEnabled: true,
+        bevelSize: 0.15,
+        bevelThickness: 0.15,
+        bevelSegments: 2,
+      });
+      hullGeo.translate(0, 0, -1.7);
+      hullGeo.rotateY(-Math.PI / 2);
+      const hull = new THREE.Mesh(hullGeo, hullWhite);
+      hull.castShadow = true;
+      g.add(hull);
+
+      // Waterline stripe & teak deck
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.62, 0.34, 11.4), accentMat);
+      stripe.position.set(0, 0.72, -0.3);
+      g.add(stripe);
+
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.12, 10.6), teakMat);
+      deck.position.set(0, 1.56, -0.2);
+      g.add(deck);
+
+      // Wraparound cabin superstructure + tinted bridge windows + glowing warm portholes
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.55, 1.35, 5.4), hullWhite);
+      cabin.position.set(0, 2.22, -0.8);
+      cabin.castShadow = true;
+      g.add(cabin);
+
+      const bridgeGlass = new THREE.Mesh(new THREE.BoxGeometry(2.62, 0.62, 4.6), glassMat);
+      bridgeGlass.position.set(0, 2.38, -0.45);
+      g.add(bridgeGlass);
+
+      const porthole = new THREE.Mesh(new THREE.BoxGeometry(3.64, 0.24, 3.2), cabinGlow);
+      porthole.position.set(0, 1.15, -0.6);
+      g.add(porthole);
+
+      // Flybridge radar arch
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.12, 6, 14, Math.PI), hullWhite);
+      arch.position.set(0, 2.9, -1.6);
+      g.add(arch);
+
+      // Subtle white water wake ring
+      const wake = new THREE.Mesh(
+        new THREE.RingGeometry(2.2, 4.6, 18),
+        new THREE.MeshBasicMaterial({
+          color: 0xe6fcff,
+          transparent: true,
+          opacity: 0.22,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      wake.rotation.x = -Math.PI / 2;
+      wake.position.set(0, 0.12, 0);
+      wake.scale.set(0.7, 1.65, 1);
+      g.add(wake);
+
+      g.scale.setScalar(scale);
+      return g;
+    };
+
+    const buildSailboat = (scale = 1) => {
+      const g = new THREE.Group();
+      const hull = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 0.7, 8.4, 10), hullWhite);
+      hull.rotation.x = Math.PI / 2;
+      hull.scale.set(1.2, 0.85, 1);
+      hull.position.set(0, 0.65, 0);
+      g.add(hull);
+
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.24, 7.6), stripeCyan);
+      stripe.position.set(0, 0.72, 0);
+      g.add(stripe);
+
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.68, 3.2), hullWhite);
+      cab.position.set(0, 1.25, -0.4);
+      g.add(cab);
+
+      const mast = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.11, 11.5, 8),
+        new THREE.MeshStandardMaterial({ color: 0xdbe4f0, metalness: 0.75, roughness: 0.25 }),
+      );
+      mast.position.set(0, 6.8, 0.4);
+      g.add(mast);
+
+      // Crisp triangular mainsail & jib sail
+      const mainSailShape = new THREE.Shape();
+      mainSailShape.moveTo(0, 0);
+      mainSailShape.lineTo(0, 9.6);
+      mainSailShape.lineTo(-4.4, 0.6);
+      mainSailShape.closePath();
+      const mainSail = new THREE.Mesh(new THREE.ShapeGeometry(mainSailShape), sailMat);
+      mainSail.rotation.y = Math.PI / 2;
+      mainSail.position.set(0.08, 2.2, 0.35);
+      g.add(mainSail);
+
+      const jibShape = new THREE.Shape();
+      jibShape.moveTo(0, 0);
+      jibShape.lineTo(0, 8.2);
+      jibShape.lineTo(3.2, 0.4);
+      jibShape.closePath();
+      const jib = new THREE.Mesh(new THREE.ShapeGeometry(jibShape), sailMat);
+      jib.rotation.y = Math.PI / 2;
+      jib.position.set(-0.08, 2.1, 0.5);
+      g.add(jib);
+
+      g.scale.setScalar(scale);
+      return g;
+    };
+
+    const yachtSpecs = [
+      { kind: 'motor', x: 186, z: 12, rotY: -0.55, scale: 1.25, accent: stripeNavy },
+      { kind: 'sail', x: 214, z: -18, rotY: 0.38, scale: 1.2 },
+      { kind: 'motor', x: 224, z: 72, rotY: 2.35, scale: 1.2, accent: stripeCyan },
+      { kind: 'sail', x: 184, z: 76, rotY: -1.1, scale: 1.1 },
+      { kind: 'motor', x: 188, z: -48, rotY: 0.72, scale: 1.22, accent: stripeNavy },
+      { kind: 'sail', x: 242, z: -38, rotY: -0.45, scale: 1.18 },
+    ];
+
+    yachtSpecs.forEach((ys, i) => {
+      const mesh = ys.kind === 'motor' ? buildMotorYacht(ys.scale, ys.accent) : buildSailboat(ys.scale);
+      mesh.position.set(ys.x, -1.02, ys.z);
+      mesh.rotation.y = ys.rotY;
+      this.scene.add(mesh);
+      this.yachts.push({ mesh, baseY: -1.02, phase: i * 1.15 });
+    });
+  }
+
   _buildDistrictBuildings() {
-    // Pre-generate shared facade textures per architectural style for fast draw & rich variety
     const styleTextures = {
       artdeco: [0, 1, 2, 3, 4].map((s) => createBuildingFacadeTexture('artdeco', s)),
       glass: [0, 1, 2, 3].map((s) => createBuildingFacadeTexture('glass', s)),
@@ -423,32 +630,32 @@ export class CalimaCity {
     };
 
     const neonSigns = [
-      { text: 'HOTEL SOL', bg: '#1c1030', fg: '#ff6e9c', accent: '#2cf2e8' },
-      { text: 'PALMA CLUB', bg: '#101830', fg: '#2cf2e8', accent: '#ff5e6c' },
-      { text: 'CALIMA TOWER', bg: '#0c162e', fg: '#ffd166', accent: '#38bdf8' },
-      { text: 'SUNSET LOUNGE', bg: '#26112d', fg: '#ff9a3c', accent: '#ff5e6c' },
-      { text: 'VAULT CALIMA', bg: '#0f172a', fg: '#4df0a9', accent: '#ffd166' },
-      { text: 'OASIS RESORT', bg: '#161b3a', fg: '#64f5e9', accent: '#ffd166' },
-      { text: 'BARRIO CANTINA', bg: '#2c151f', fg: '#ffb703', accent: '#fb5607' },
+      { text: 'HOTEL PALMA', bg: '#1a0e2e', fg: '#ff5e8c', accent: '#2cf2e8' },
+      { text: 'SOLSTICE CLUB', bg: '#0e1630', fg: '#2cf2e8', accent: '#ff5e6c' },
+      { text: 'OCEAN DRIVE', bg: '#161134', fg: '#ffd166', accent: '#ff5e8c' },
+      { text: 'CALIMA BANK', bg: '#0c162e', fg: '#4df0a9', accent: '#ffd166' },
       { text: 'MORALES CUSTOMS', bg: '#0e192f', fg: '#2cf2e8', accent: '#ffd166' },
+      { text: 'PUERTO AZUL', bg: '#131d36', fg: '#64f5e9', accent: '#ff9a3c' },
+      { text: 'SUNSET LOUNGE', bg: '#26112d', fg: '#ff9a3c', accent: '#ff5e6c' },
+      { text: 'BARRIO CANTINA', bg: '#2c151f', fg: '#ffb703', accent: '#fb5607' },
     ];
     const signTextures = neonSigns.map((s) => createNeonSignTexture(s.text, s.bg, s.fg, s.accent));
 
     const roofMat = new THREE.MeshStandardMaterial({ color: 0x353b4f, roughness: 0.85 });
-    const acMat = new THREE.MeshStandardMaterial({ color: 0x7b8599, roughness: 0.7 });
+    const acMat = new THREE.MeshStandardMaterial({ color: 0x7b8599, roughness: 0.65 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x161c2c, metalness: 0.7, roughness: 0.35 });
 
     const neonColors = [0xff5e7e, 0x2cf2e8, 0xffd166, 0xff8c42, 0xc77dff];
     const neonMats = neonColors.map((c) => {
       const m = new THREE.MeshStandardMaterial({
         color: c,
         emissive: c,
-        emissiveIntensity: 1.55,
+        emissiveIntensity: 1.65,
       });
       this.neonMaterials.push(m);
       return m;
     });
 
-    // Populate every city block between avenues & cross-streets
     let signIdx = 0;
     for (let xi = 0; xi < WORLD.avenuesX.length - 1; xi++) {
       const bx1 = WORLD.avenuesX[xi] + WORLD.roadWidth * 0.5 + WORLD.sidewalkWidth;
@@ -462,7 +669,6 @@ export class CalimaCity {
         const cx = (bx1 + bx2) * 0.5;
         const cz = (bz1 + bz2) * 0.5;
 
-        // Leave central Solstice Plaza & shop courtyards open for shootouts and garages!
         const isSolsticePlaza = xi === 2 && zi === 2;
         const isGarageLot = xi === 0 && zi === 2;
         const isHarborYard = zi === 4 && xi <= 2;
@@ -472,7 +678,6 @@ export class CalimaCity {
           continue;
         }
         if (isHarborYard) {
-          // Puerto Azul Docks: open container yard + 1 warehouse
           this._spawnBuilding(
             bx1 + blockW * 0.25,
             bz1 + blockD * 0.28,
@@ -483,6 +688,7 @@ export class CalimaCity {
             styleTextures,
             roofMat,
             acMat,
+            frameMat,
             neonMats,
             signTextures,
             signIdx++,
@@ -490,14 +696,12 @@ export class CalimaCity {
           continue;
         }
 
-        // Determine district architectural style
         let style = 'glass';
         if (xi === 3) style = 'artdeco';
         else if (zi === 0) style = 'barrio';
         else if (xi === 0) style = 'villa';
         else if (zi === 4) style = 'warehouse';
 
-        // Split block into 2x2 or 2x1 lots
         const cols = 2;
         const rows = isGarageLot ? 1 : 2;
         const lotW = blockW / cols;
@@ -507,7 +711,6 @@ export class CalimaCity {
           for (let lr = 0; lr < rows; lr++) {
             const lx = bx1 + lotW * (lc + 0.5);
             const lz = bz1 + lotD * (lr + 0.5);
-            // Skip lots right on top of shop markers
             if (SHOPS.some((s) => Math.hypot(s.x - lx, s.z - lz) < 17)) continue;
 
             const w = lotW * (0.74 + this.rng() * 0.16);
@@ -529,6 +732,7 @@ export class CalimaCity {
               styleTextures,
               roofMat,
               acMat,
+              frameMat,
               neonMats,
               signTextures,
               signIdx++,
@@ -538,10 +742,10 @@ export class CalimaCity {
       }
     }
 
-    // Extra iconic Art-Deco oceanfront boutique facades along west side of Palma Strip
+    // Iconic Art-Deco oceanfront boutique facades along west side of Palma Strip
     for (let z = -170; z <= 170; z += 44) {
-      if (Math.abs(z - 40) < 28) continue; // Keep Causeway approach clear
-      const h = 16 + (Math.abs(z) % 14);
+      if (Math.abs(z - 40) < 28) continue;
+      const h = 17 + (Math.abs(z) % 14);
       this._spawnBuilding(
         60,
         z,
@@ -552,6 +756,7 @@ export class CalimaCity {
         styleTextures,
         roofMat,
         acMat,
+        frameMat,
         neonMats,
         signTextures,
         signIdx++,
@@ -559,13 +764,27 @@ export class CalimaCity {
     }
   }
 
-  _spawnBuilding(x, z, w, d, h, style, styleTextures, roofMat, acMat, neonMats, signTextures, idx) {
+  _spawnBuilding(
+    x,
+    z,
+    w,
+    d,
+    h,
+    style,
+    styleTextures,
+    roofMat,
+    acMat,
+    frameMat,
+    neonMats,
+    signTextures,
+    idx,
+  ) {
     const texList = styleTextures[style];
     const tex = texList[idx % texList.length];
     const sideMat = new THREE.MeshStandardMaterial({
       map: tex,
-      roughness: style === 'glass' ? 0.25 : 0.68,
-      metalness: style === 'glass' ? 0.45 : 0.08,
+      roughness: style === 'glass' ? 0.22 : 0.64,
+      metalness: style === 'glass' ? 0.52 : 0.08,
     });
     const mats = [sideMat, sideMat, roofMat, roofMat, sideMat, sideMat];
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mats);
@@ -574,47 +793,60 @@ export class CalimaCity {
     mesh.receiveShadow = true;
     this.scene.add(mesh);
 
-    // Rooftop architectural crown / setback on tall towers & Art-Deco hotels
+    // Rooftop architectural crown, antenna spire & AC units
     if (h > 22) {
-      const crownH = 4 + (idx % 6);
-      const crown = new THREE.Mesh(
-        new THREE.BoxGeometry(w * 0.62, crownH, d * 0.62),
-        mats,
-      );
+      const crownH = 4.2 + (idx % 6);
+      const crown = new THREE.Mesh(new THREE.BoxGeometry(w * 0.62, crownH, d * 0.62), mats);
       crown.position.set(x, h + crownH * 0.5, z);
       crown.castShadow = true;
       this.scene.add(crown);
+
+      if (style === 'glass' && idx % 2 === 0) {
+        const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.35, 11, 6), acMat);
+        spire.position.set(x, h + crownH + 5.5, z);
+        this.scene.add(spire);
+        const beacon = new THREE.Mesh(
+          new THREE.SphereGeometry(0.42, 8, 8),
+          neonMats[0],
+        );
+        beacon.position.set(x, h + crownH + 11.2, z);
+        this.scene.add(beacon);
+      }
     } else {
-      // Rooftop AC unit
-      const ac = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.4, 2.2), acMat);
+      const ac = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.4, 2.2), acMat);
       ac.position.set(x + w * 0.15, h + 0.7, z - d * 0.12);
       this.scene.add(ac);
     }
 
-    // Glowing neon trim on Art-Deco hotels, Solstice towers & Barrio cantinas
+    // Glowing neon trim bands on Art-Deco hotels, Solstice towers & Barrio cantinas
     if (style === 'artdeco' || style === 'glass' || (style === 'barrio' && idx % 2 === 0)) {
       const neonMat = neonMats[idx % neonMats.length];
-      const trim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.35, 0.5, d + 0.35), neonMat);
-      trim.position.set(x, h - 0.6, z);
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.55, d + 0.4), neonMat);
+      trim.position.set(x, h - 0.55, z);
       this.scene.add(trim);
     }
 
-    // Glowing neon billboard signs facing main boulevards
-    if ((style === 'artdeco' || style === 'glass') && (idx % 2 === 0 || x > 40)) {
+    // Framed 3D Neon Marquee Signs facing Palma Strip & Solstice boulevards!
+    if ((style === 'artdeco' || style === 'glass') && (idx % 2 === 0 || x > 38)) {
       const sTex = signTextures[idx % signTextures.length];
       const signMat = new THREE.MeshBasicMaterial({ map: sTex });
-      const signW = Math.min(w * 0.9, 13.5);
-      const signH = signW * 0.28;
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(signW, signH), signMat);
-      if (x > 40) {
+      const signW = Math.min(Math.max(w, d) * 0.86, 14.5);
+      const signH = signW * 0.27;
+      const marquee = new THREE.Group();
+      const box = new THREE.Mesh(new THREE.BoxGeometry(signW + 0.4, signH + 0.36, 0.55), frameMat);
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(signW, signH), signMat);
+      face.position.z = 0.29;
+      marquee.add(box, face);
+
+      if (x > 38) {
         // Face east toward Palma Strip & Beach
-        sign.rotation.y = Math.PI / 2;
-        sign.position.set(x + w * 0.5 + 0.3, Math.min(h - 2.6, 13.5), z);
+        marquee.rotation.y = Math.PI / 2;
+        marquee.position.set(x + w * 0.5 + 0.32, Math.min(h - 2.6, 13.5), z);
       } else {
-        // Face south toward cross street
-        sign.position.set(x, Math.min(h - 2.6, 16), z + d * 0.5 + 0.3);
+        // Face south toward Solstice Plaza / cross street
+        marquee.position.set(x, Math.min(h - 2.6, 15.5), z + d * 0.5 + 0.32);
       }
-      this.scene.add(sign);
+      this.scene.add(marquee);
     }
 
     const mapColors = {
@@ -629,23 +861,21 @@ export class CalimaCity {
   }
 
   _buildSolsticePlaza(cx, cz, w, d) {
-    // Open neon plaza with fountain, cover planters, warm night lighting & Vault of Calima monument
-    const plazaMat = new THREE.MeshStandardMaterial({ color: 0x3b4462, roughness: 0.68 });
+    const plazaMat = new THREE.MeshStandardMaterial({ color: 0x3b4462, roughness: 0.62 });
     const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.25, d), plazaMat);
     floor.position.set(cx, 0.12, cz);
     floor.receiveShadow = true;
     this.scene.add(floor);
 
-    // Subtle illuminated plaza tile accent ring + warm streetlamp bounce light
-    const plazaLight = new THREE.PointLight(0xffb878, 2.2, 54);
+    const plazaLight = new THREE.PointLight(0xffb878, 2.4, 58);
     plazaLight.position.set(cx, 11, cz);
     this.scene.add(plazaLight);
 
     const waterMat = new THREE.MeshStandardMaterial({
       color: 0x2cf2e8,
       emissive: 0x168b96,
-      emissiveIntensity: 0.85,
-      roughness: 0.15,
+      emissiveIntensity: 0.9,
+      roughness: 0.14,
     });
     this.neonMaterials.push(waterMat);
     const basin = new THREE.Mesh(
@@ -661,8 +891,8 @@ export class CalimaCity {
 
     const obeliskMat = new THREE.MeshStandardMaterial({
       color: 0xffd166,
-      metalness: 0.7,
-      roughness: 0.25,
+      metalness: 0.75,
+      roughness: 0.22,
     });
     const obelisk = new THREE.Mesh(new THREE.OctahedronGeometry(2.6, 0), obeliskMat);
     obelisk.scale.set(0.8, 2.4, 0.8);
@@ -670,12 +900,11 @@ export class CalimaCity {
     this.scene.add(obelisk);
     this._addCollider(cx, cz, 14.2, 14.2, 6);
 
-    // Low tactical cover walls around plaza perimeter
     const wallMat = new THREE.MeshStandardMaterial({ color: 0x9aa4ba, roughness: 0.6 });
     const trimMat = new THREE.MeshStandardMaterial({
       color: 0xff5e6c,
       emissive: 0xff5e6c,
-      emissiveIntensity: 1.3,
+      emissiveIntensity: 1.4,
     });
     this.neonMaterials.push(trimMat);
     const offsets = [
@@ -697,7 +926,6 @@ export class CalimaCity {
   }
 
   _buildHarborProps() {
-    // Shipping containers & towering gantry cranes in Puerto Azul Docks
     const colors = ['#d94848', '#228b99', '#e59528', '#2f4b7c'];
     const mats = colors.map(
       (c) => new THREE.MeshStandardMaterial({ map: createContainerTexture(c), roughness: 0.65 }),
@@ -730,7 +958,6 @@ export class CalimaCity {
       this._addCollider(x, z, cw, cd, 7.2);
     });
 
-    // Two towering red-and-gold Puerto Azul harbor gantry cranes
     const craneRed = new THREE.MeshStandardMaterial({ color: 0xe63946, roughness: 0.55 });
     const craneGold = new THREE.MeshStandardMaterial({ color: 0xffbe0b, roughness: 0.5 });
     for (const cx of [-148, -18]) {
@@ -757,48 +984,87 @@ export class CalimaCity {
   }
 
   _buildBeachAndPalms() {
-    // Shared palm geometry/materials
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7c5439, roughness: 0.9 });
-    const frondMat = new THREE.MeshStandardMaterial({
-      color: 0x2f9e5b,
-      roughness: 0.65,
+    // Arched Multi-Segment 3D Palm Trees: curved ringed trunks + coconut clusters +
+    // 8 gracefully arched drooping palm fronds (3 curved leaflet segments per frond!)
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x82583c, roughness: 0.88 });
+    const trunkDarkMat = new THREE.MeshStandardMaterial({ color: 0x613f29, roughness: 0.92 });
+    const coconutMat = new THREE.MeshStandardMaterial({ color: 0x56351e, roughness: 0.78 });
+    const frondMatA = new THREE.MeshStandardMaterial({
+      color: 0x2ba859,
+      roughness: 0.58,
       side: THREE.DoubleSide,
     });
+    const frondMatB = new THREE.MeshStandardMaterial({
+      color: 0x3ec268,
+      roughness: 0.55,
+      side: THREE.DoubleSide,
+    });
+
+    // Reusable arched 3-segment drooping frond builder
+    const buildArchedFrond = (scale, mat) => {
+      const frondGroup = new THREE.Group();
+      // Segment 1: rising arch from crown
+      const seg1 = new THREE.Mesh(new THREE.BoxGeometry(1.7 * scale, 0.08 * scale, 0.82 * scale), mat);
+      seg1.position.set(0.82 * scale, 0.28 * scale, 0);
+      seg1.rotation.z = 0.28;
+      // Segment 2: mid sweeping arch
+      const seg2 = new THREE.Mesh(new THREE.BoxGeometry(1.9 * scale, 0.07 * scale, 0.92 * scale), mat);
+      seg2.position.set(2.45 * scale, 0.16 * scale, 0);
+      seg2.rotation.z = -0.26;
+      // Segment 3: drooping tapered tip
+      const tipGeo = new THREE.ConeGeometry(0.48 * scale, 2.0 * scale, 4);
+      tipGeo.rotateZ(-Math.PI / 2);
+      const seg3 = new THREE.Mesh(tipGeo, mat);
+      seg3.scale.set(1, 0.18, 0.95);
+      seg3.position.set(4.05 * scale, -0.58 * scale, 0);
+      seg3.rotation.z = -0.68;
+      frondGroup.add(seg1, seg2, seg3);
+      return frondGroup;
+    };
 
     const spawnPalm = (x, z, scale = 1) => {
       const group = new THREE.Group();
       group.position.set(x, 0, z);
-      const lean = (this.rng() - 0.5) * 0.25;
-      let prevY = 0;
-      for (let seg = 0; seg < 4; seg++) {
-        const h = 2.6 * scale;
-        const rBot = (0.42 - seg * 0.06) * scale;
-        const rTop = (0.36 - seg * 0.06) * scale;
-        const piece = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, 7), trunkMat);
-        piece.position.set(lean * seg * seg * 0.7, prevY + h * 0.5, 0);
-        piece.rotation.z = -lean * (seg + 1) * 0.12;
+      const lean = (this.rng() - 0.5) * 0.34;
+      let curX = 0;
+      let curY = 0;
+      const segCount = 5;
+      for (let seg = 0; seg < segCount; seg++) {
+        const h = 2.25 * scale;
+        const rBot = (0.4 - seg * 0.052) * scale;
+        const rTop = (0.35 - seg * 0.052) * scale;
+        const tilt = -lean * (seg + 0.6) * 0.14;
+        const piece = new THREE.Mesh(
+          new THREE.CylinderGeometry(rTop, rBot, h, 8),
+          seg % 2 === 0 ? trunkMat : trunkDarkMat,
+        );
+        piece.position.set(curX - Math.sin(tilt) * h * 0.5, curY + Math.cos(tilt) * h * 0.5, 0);
+        piece.rotation.z = tilt;
         piece.castShadow = true;
         group.add(piece);
-        prevY += h * 0.94;
+        curX -= Math.sin(tilt) * h * 0.95;
+        curY += Math.cos(tilt) * h * 0.95;
       }
 
       const crown = new THREE.Group();
-      crown.position.set(lean * 9 * 0.7, prevY + 0.2, 0);
-      const frondCount = 7;
+      crown.position.set(curX, curY + 0.1, 0);
+
+      // Coconut cluster under crown
+      for (let c = 0; c < 3; c++) {
+        const ca = (c / 3) * Math.PI * 2;
+        const nut = new THREE.Mesh(new THREE.SphereGeometry(0.24 * scale, 7, 6), coconutMat);
+        nut.position.set(Math.cos(ca) * 0.34 * scale, -0.22 * scale, Math.sin(ca) * 0.34 * scale);
+        crown.add(nut);
+      }
+
+      // 8 arched drooping palm fronds arranged in two natural tiers
+      const frondCount = 8;
       for (let f = 0; f < frondCount; f++) {
-        const angle = (f / frondCount) * Math.PI * 2 + this.rng() * 0.25;
-        const frond = new THREE.Mesh(
-          new THREE.ConeGeometry(1.1 * scale, 5.2 * scale, 4),
-          frondMat,
-        );
-        frond.scale.set(0.55, 1, 0.16);
-        frond.rotation.z = Math.PI * 0.62;
+        const angle = (f / frondCount) * Math.PI * 2 + this.rng() * 0.22;
+        const fScale = scale * (0.9 + (f % 2) * 0.14);
+        const frond = buildArchedFrond(fScale, f % 2 === 0 ? frondMatA : frondMatB);
         frond.rotation.y = angle;
-        frond.position.set(
-          Math.cos(angle) * 2.1 * scale,
-          -0.3 * scale,
-          Math.sin(angle) * 2.1 * scale,
-        );
+        frond.rotation.z = f % 2 === 0 ? 0.12 : -0.14;
         crown.add(frond);
       }
       group.add(crown);
@@ -807,14 +1073,12 @@ export class CalimaCity {
       this.palmTrees.push({ crown, phase: this.rng() * Math.PI * 2 });
     };
 
-    // Lush rows of palms along Palma Strip, Boardwalk, Beach, and Cayo Brisa Island
     for (let z = -205; z <= 195; z += 18) {
       if (Math.abs(z - 40) < 16) continue;
-      spawnPalm(101.5, z, 0.95 + this.rng() * 0.28);
-      if (z % 36 === 0) spawnPalm(120 + this.rng() * 8, z + 6, 0.9 + this.rng() * 0.3);
+      spawnPalm(101.5, z, 0.95 + this.rng() * 0.26);
+      if (z % 36 === 0) spawnPalm(120 + this.rng() * 8, z + 6, 0.92 + this.rng() * 0.26);
       if (z % 36 !== 0) spawnPalm(75.5, z + 5, 0.88 + this.rng() * 0.22);
     }
-    // Palms on Cayo Brisa Island & Mirador Heights
     for (let i = 0; i < 12; i++) {
       const a = (i / 12) * Math.PI * 2;
       spawnPalm(WORLD.islandCenterX + Math.cos(a) * 32, WORLD.islandCenterZ + Math.sin(a) * 32, 1.05);
@@ -824,7 +1088,7 @@ export class CalimaCity {
       spawnPalm(-187, z + 12, 0.95);
     }
 
-    // Colorful beach umbrellas & loungers along Palma Beach
+    // Colorful beach umbrellas along Palma Beach
     const umbColors = [0xff5e6c, 0x2cf2e8, 0xffd166, 0xff9a3c, 0xa855f7];
     const poleMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 });
     for (let z = -170; z <= 170; z += 22) {
@@ -846,11 +1110,18 @@ export class CalimaCity {
   }
 
   _buildStreetlamps() {
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x2c3347, metalness: 0.5, roughness: 0.4 });
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x2c3347, metalness: 0.55, roughness: 0.38 });
     const bulbMat = new THREE.MeshStandardMaterial({
       color: 0xffe6a3,
       emissive: 0xffc864,
-      emissiveIntensity: 2.0,
+      emissiveIntensity: 2.2,
+    });
+    const poolMat = new THREE.MeshBasicMaterial({
+      color: 0xffcf78,
+      transparent: true,
+      opacity: 0.16,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
     this.neonMaterials.push(bulbMat);
 
@@ -861,12 +1132,16 @@ export class CalimaCity {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 7.6, 6), poleMat);
       pole.position.y = 3.8;
       g.add(pole);
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 0.16), poleMat);
-      arm.position.set(0.85, 7.5, 0);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.16, 0.16), poleMat);
+      arm.position.set(0.88, 7.5, 0);
       g.add(arm);
-      const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.24, 0.45), bulbMat);
-      bulb.position.set(1.5, 7.35, 0);
+      const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.24, 0.45), bulbMat);
+      bulb.position.set(1.55, 7.35, 0);
       g.add(bulb);
+      const glowPool = new THREE.Mesh(new THREE.CircleGeometry(3.8, 16), poolMat);
+      glowPool.rotation.x = -Math.PI / 2;
+      glowPool.position.set(2.2, 0.08, 0);
+      g.add(glowPool);
       this.scene.add(g);
     };
 
@@ -880,7 +1155,7 @@ export class CalimaCity {
   }
 
   _buildStuntRamps() {
-    const rampMat = new THREE.MeshStandardMaterial({ color: 0x262f47, roughness: 0.6 });
+    const rampMat = new THREE.MeshStandardMaterial({ color: 0x262f47, roughness: 0.55 });
     const stripeMat = new THREE.MeshStandardMaterial({
       color: 0xffd166,
       emissive: 0xff9a3c,
@@ -893,7 +1168,6 @@ export class CalimaCity {
       g.position.set(def.x, 0, def.z);
       g.rotation.y = def.rotY;
 
-      // Wedge ramp shape
       const shape = new THREE.Shape();
       shape.moveTo(0, 0);
       shape.lineTo(10, 0);
@@ -907,7 +1181,6 @@ export class CalimaCity {
       wedge.receiveShadow = true;
       g.add(wedge);
 
-      // Glowing chevron rails
       for (const sx of [-2.55, 2.55]) {
         const rail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.3, 10.4), stripeMat);
         rail.position.set(sx, 1.45, 0);
@@ -924,7 +1197,7 @@ export class CalimaCity {
       const mat = new THREE.MeshBasicMaterial({
         color: shop.color,
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.44,
         side: THREE.DoubleSide,
       });
       const ring = new THREE.Mesh(new THREE.RingGeometry(3.2, 4.4, 28), mat);
@@ -979,7 +1252,6 @@ export class CalimaCity {
           rx += (dx / dist) * push;
           rz += (dz / dist) * push;
         } else {
-          // Inside AABB fallback: push out along nearest edge
           const dLeft = Math.abs(rx - c.minX);
           const dRight = Math.abs(c.maxX - rx);
           const dTop = Math.abs(rz - c.minZ);
@@ -993,7 +1265,6 @@ export class CalimaCity {
       }
     }
 
-    // Keep player/vehicles out of deep ocean except on Cayo Brisa Causeway & Island
     const onCauseway =
       rx >= WORLD.causewayStartX - 6 &&
       rx <= WORLD.causewayEndX + 10 &&
@@ -1020,7 +1291,6 @@ export class CalimaCity {
   }
 
   getGroundHeight(x, z) {
-    // Causeway deck slightly elevated
     if (x >= WORLD.causewayStartX && x <= WORLD.causewayEndX && Math.abs(z - WORLD.causewayZ) <= 8.5) {
       return 0.65;
     }
@@ -1055,7 +1325,10 @@ export class CalimaCity {
     if (this.waterMesh) {
       this.waterMesh.material.color.setHex(preset.waterColor);
       this.waterMesh.material.emissive.setHex(preset.waterColor);
-      this.waterMesh.material.emissiveIntensity = 0.25;
+      this.waterMesh.material.emissiveIntensity = 0.26;
+    }
+    if (this.glintUniforms) {
+      this.glintUniforms.uColor.value.setHex(preset.waterHighlight);
     }
     if (this.cloudMat) {
       this.cloudMat.color.setHex(preset.waterHighlight);
@@ -1068,7 +1341,7 @@ export class CalimaCity {
   }
 
   update(dt, elapsed) {
-    // Animate ocean wave shimmer
+    // Animate ocean waves & sun reflection shimmer
     if (this.waterGeo) {
       const pos = this.waterGeo.attributes.position;
       for (let i = 0; i < pos.count; i++) {
@@ -1079,26 +1352,39 @@ export class CalimaCity {
       }
       pos.needsUpdate = true;
     }
-
-    // Gentle coastal breeze swaying palm crowns
-    for (let i = 0; i < this.palmTrees.length; i++) {
-      const p = this.palmTrees[i];
-      p.crown.rotation.z = Math.sin(elapsed * 1.4 + p.phase) * 0.055;
-      p.crown.rotation.x = Math.cos(elapsed * 1.1 + p.phase) * 0.035;
+    if (this.glintUniforms) {
+      this.glintUniforms.uTime.value = elapsed;
     }
 
-    // Rotate lighthouse beam
+    // Layered surf foam ebb & flow
+    for (const sf of this.surfFoams) {
+      sf.mesh.position.x = sf.baseX + Math.sin(elapsed * 1.5 + sf.phase) * 0.85;
+      sf.mesh.material.opacity = sf.baseOp * (0.75 + Math.sin(elapsed * 1.9 + sf.phase) * 0.25);
+    }
+
+    // Gentle harbor yacht bobbing
+    for (const y of this.yachts) {
+      y.mesh.position.y = y.baseY + Math.sin(elapsed * 1.4 + y.phase) * 0.16;
+      y.mesh.rotation.z = Math.sin(elapsed * 1.1 + y.phase) * 0.032;
+      y.mesh.rotation.x = Math.cos(elapsed * 0.9 + y.phase) * 0.022;
+    }
+
+    // Coastal breeze swaying arched palm crowns
+    for (let i = 0; i < this.palmTrees.length; i++) {
+      const p = this.palmTrees[i];
+      p.crown.rotation.z = Math.sin(elapsed * 1.4 + p.phase) * 0.06;
+      p.crown.rotation.x = Math.cos(elapsed * 1.1 + p.phase) * 0.04;
+    }
+
     if (this.lighthouseBeam) {
       this.lighthouseBeam.rotation.y = elapsed * 0.55;
     }
 
-    // Pulse shop beacons
     for (const b of this.shopBeacons) {
       const s = 1 + Math.sin(elapsed * 3.5) * 0.08;
       b.ring.scale.set(s, s, 1);
     }
 
-    // Ramp cooldowns
     for (const r of this.ramps) {
       if (r.cooldown > 0) r.cooldown = Math.max(0, r.cooldown - dt);
     }

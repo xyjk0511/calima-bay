@@ -1,9 +1,11 @@
-// HUD controller, 2D Canvas Minimap & City Atlas renderer, Morales Customs Garage,
-// Underground Armory shop modal, Weapon Wheel, and Title Screen bindings.
+// HUD controller, dynamic crosshair & crimson hitmarker, floating kill feed,
+// 2D Canvas Minimap & Interactive City Atlas (clickable Operations selector),
+// Morales Customs Garage, Underground Armory shop modal, Weapon Wheel, and Title Screen bindings.
 
 import {
   WORLD,
   DISTRICTS,
+  MISSIONS,
   SHOPS,
   STUNT_RAMPS,
   getDistrictAt,
@@ -19,9 +21,16 @@ const CREW_ABILITIES = [
 export class HudController {
   constructor(callbacks) {
     this.cb = callbacks;
+    this.hitmarkerTimer = 0;
+    this.hitmarkerKill = false;
+    this.fireBloomTimer = 0;
+    this.killFeedItems = [];
+
     this.el = {
       hud: document.getElementById('hud'),
       crosshair: document.getElementById('crosshair'),
+      hitmarker: document.getElementById('hitmarker'),
+      killFeed: document.getElementById('kill-feed'),
       damageVignette: document.getElementById('damage-vignette'),
       nitroVignette: document.getElementById('nitro-vignette'),
       titleScreen: document.getElementById('title-screen'),
@@ -68,6 +77,7 @@ export class HudController {
       minimap: document.getElementById('minimap-canvas'),
       atlasModal: document.getElementById('atlas-modal'),
       atlasCanvas: document.getElementById('atlas-canvas'),
+      atlasMissions: document.getElementById('atlas-missions'),
       atlasStats: document.getElementById('atlas-stats'),
       atlasDistricts: document.getElementById('atlas-districts'),
       atlasSlots: document.getElementById('atlas-slots'),
@@ -96,6 +106,30 @@ export class HudController {
     const onTitle = mode === 'title';
     this.el.titleScreen.classList.toggle('hidden', !onTitle);
     this.el.hud.classList.toggle('hidden', onTitle);
+    if (onTitle) this.el.crosshair.classList.add('hidden');
+  }
+
+  pulseCrosshairFire() {
+    this.fireBloomTimer = 0.11;
+  }
+
+  flashHitmarker(isKill = false, duration = 0.24) {
+    this.hitmarkerTimer = duration;
+    this.hitmarkerKill = isKill;
+    this.el.hitmarker.classList.add('show');
+    this.el.hitmarker.classList.toggle('kill', isKill);
+  }
+
+  pushKillFeed(text, kind = 'kill', duration = 3.2) {
+    const div = document.createElement('div');
+    div.className = `kf-item ${kind}`;
+    div.textContent = text;
+    this.el.killFeed.appendChild(div);
+    this.killFeedItems.push({ el: div, life: duration });
+    while (this.killFeedItems.length > 3) {
+      const old = this.killFeedItems.shift();
+      old.el.remove();
+    }
   }
 
   refreshTitleSlots(slots) {
@@ -124,12 +158,32 @@ export class HudController {
       <div class="stat-row"><span>Operations Cleared</span><strong>${player.stats.missionsDone} / 8</strong></div>
       <div class="stat-row"><span>Stunt Jumps</span><strong>${player.stats.stuntsDone} / 8</strong></div>
       <div class="stat-row"><span>Takedowns</span><strong>${player.stats.takedowns}</strong></div>
+      <div class="stat-row"><span>Air One Downed</span><strong>${player.stats.choppersDowned || 0}</strong></div>
     `;
 
     this.el.atlasDistricts.innerHTML = DISTRICTS.map(
       (d) =>
         `<div class="district-row"><span>${d.name}</span><span>${missions.districtStanding[d.id] || 15}%</span></div>`,
     ).join('');
+
+    // Clickable Syndicate Operations selector
+    if (this.el.atlasMissions) {
+      this.el.atlasMissions.innerHTML = '';
+      MISSIONS.forEach((m, idx) => {
+        const isActive = idx === missions.missionIndex % MISSIONS.length;
+        const isCleared = missions.completedIds.has(m.id);
+        const btn = document.createElement('button');
+        btn.className = `mission-op-btn${isActive ? ' active' : ''}${isCleared ? ' cleared' : ''}`;
+        btn.innerHTML = `
+          <span>0${idx + 1}. ${m.title}</span>
+          <span class="op-tag">${isActive ? 'ACTIVE' : isCleared ? 'DONE' : 'LAUNCH'}</span>
+        `;
+        btn.addEventListener('click', () => {
+          if (this.cb.onSelectMission) this.cb.onSelectMission(idx);
+        });
+        this.el.atlasMissions.appendChild(btn);
+      });
+    }
 
     const slots = save.listSlots();
     this.el.atlasSlots.innerHTML = '';
@@ -251,15 +305,47 @@ export class HudController {
     }
   }
 
-  update(elapsed, state) {
-    const { player, city, police, missions, audio, nearVehicle, nearShop } = state;
+  update(dt, elapsed, state) {
+    const { player, city, police, missions, audio, nearVehicle, nearShop, input, modalOpen } = state;
     const district = getDistrictAt(player.x, player.z);
     this.el.districtName.textContent = district.name;
     this.el.timeBadge.textContent = city.currentPreset ? city.currentPreset.label : 'GOLDEN SUNSET';
     this.el.radioStation.textContent = audio.currentStation.name;
 
-    // Crosshair visible only when on foot
-    this.el.crosshair.classList.toggle('hidden', !!player.vehicle || player.dead);
+    // Crosshair visible on foot AND during drive-by aiming/shooting in a vehicle!
+    const showCrosshair =
+      !modalOpen &&
+      !player.dead &&
+      (!player.vehicle || player.aiming || (input && input.fire) || this.hitmarkerTimer > 0);
+    this.el.crosshair.classList.toggle('hidden', !showCrosshair);
+    this.el.crosshair.classList.toggle('ads', !!player.aiming);
+
+    if (this.fireBloomTimer > 0) {
+      this.fireBloomTimer = Math.max(0, this.fireBloomTimer - dt);
+      this.el.crosshair.classList.add('firing');
+    } else {
+      this.el.crosshair.classList.remove('firing');
+    }
+
+    if (this.hitmarkerTimer > 0) {
+      this.hitmarkerTimer = Math.max(0, this.hitmarkerTimer - dt);
+      this.el.hitmarker.classList.add('show');
+      this.el.hitmarker.classList.toggle('kill', this.hitmarkerKill);
+    } else {
+      this.el.hitmarker.classList.remove('show');
+    }
+
+    // Decay floating kill feed toasts
+    for (let i = this.killFeedItems.length - 1; i >= 0; i--) {
+      const kf = this.killFeedItems[i];
+      kf.life -= dt;
+      if (kf.life <= 0) {
+        kf.el.remove();
+        this.killFeedItems.splice(i, 1);
+      } else if (kf.life < 0.45) {
+        kf.el.style.opacity = String(kf.life / 0.45);
+      }
+    }
 
     // Damage & nitro screen edges
     this.el.damageVignette.style.opacity = String(Math.min(1, player.damageFlash * 2.4));
@@ -319,8 +405,12 @@ export class HudController {
     this.el.armorBar.style.width = `${Math.round((player.armor / player.maxArmor) * 100)}%`;
     this.el.armorVal.textContent = String(Math.round(player.armor));
 
-    const w = player.currentWeapon;
+    const w = player.vehicle ? player.driveByWeapon : player.currentWeapon;
     this.el.weaponName.textContent = w.name;
+    const slotHint = document.getElementById('weapon-slot-hint');
+    if (slotHint) {
+      slotHint.textContent = player.vehicle ? '[DRIVE-BY · LMB / G GRENADE]' : '[1-6 / Q / G GRENADE]';
+    }
     this.el.weaponAmmo.textContent = w.melee ? 'MELEE' : `${w.ammo} / ${w.maxAmmo}`;
 
     // Crew ability pill
@@ -354,10 +444,7 @@ export class HudController {
       this.el.vehPanel.classList.add('hidden');
     }
 
-    // Wasted overlay
     this.el.statusOverlay.classList.toggle('hidden', !player.dead);
-
-    // Live 2D Minimap
     this._drawMinimap(elapsed, city, player, missions, police, state.traffic);
   }
 
@@ -365,14 +452,12 @@ export class HudController {
     const ctx = this.miniCtx;
     const W = 212;
     const H = 212;
-    const scale = 0.72; // world units -> pixels
+    const scale = 0.72;
     const toScreen = (wx, wz) => [W * 0.5 + (wx - player.x) * scale, H * 0.5 + (wz - player.z) * scale];
 
-    // Ocean backdrop
     ctx.fillStyle = '#0e5874';
     ctx.fillRect(0, 0, W, H);
 
-    // Mainland & Beach
     const [mlX, mlY] = toScreen(-270, -268);
     ctx.fillStyle = '#1f2940';
     ctx.fillRect(mlX, mlY, 386 * scale, 488 * scale);
@@ -381,7 +466,6 @@ export class HudController {
     ctx.fillStyle = '#d9b578';
     ctx.fillRect(bx, by, 40 * scale, 480 * scale);
 
-    // Cayo Brisa Causeway & Island
     const [cx, cy] = toScreen(WORLD.causewayStartX, WORLD.causewayZ - 8);
     ctx.fillStyle = '#384664';
     ctx.fillRect(cx, cy, (WORLD.causewayEndX - WORLD.causewayStartX) * scale, 16 * scale);
@@ -391,7 +475,6 @@ export class HudController {
     ctx.arc(ix, iy, 40 * scale, 0, Math.PI * 2);
     ctx.fill();
 
-    // Road grid
     ctx.fillStyle = '#3c4763';
     for (const ax of WORLD.avenuesX) {
       const [rx, ry] = toScreen(ax - 9, -209);
@@ -402,14 +485,12 @@ export class HudController {
       ctx.fillRect(rx, ry, 306 * scale, 18 * scale);
     }
 
-    // Building footprints
     ctx.fillStyle = '#2b3856';
     for (const b of city.buildings) {
       const [sx, sy] = toScreen(b.x - b.w * 0.5, b.z - b.d * 0.5);
       ctx.fillRect(sx, sy, b.w * scale, b.d * scale);
     }
 
-    // Shop icons
     for (const s of SHOPS) {
       const [sx, sy] = toScreen(s.x, s.z);
       ctx.fillStyle = s.type === 'garage' ? '#2cf2e8' : '#ff5e6c';
@@ -418,7 +499,15 @@ export class HudController {
       ctx.fill();
     }
 
-    // Hostile cartel enemies
+    // Collectible cash pickups on radar
+    ctx.fillStyle = '#4df0a9';
+    for (const pk of traffic.pickups || []) {
+      const [px, py] = toScreen(pk.x, pk.z);
+      ctx.beginPath();
+      ctx.arc(px, py, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.fillStyle = '#ff6b6b';
     for (const e of traffic.enemies) {
       if (!e.alive) continue;
@@ -426,7 +515,6 @@ export class HudController {
       ctx.fillRect(ex - 2.5, ey - 2.5, 5, 5);
     }
 
-    // CBPD units blinking red/blue
     const blink = Math.floor(elapsed * 7) % 2 === 0;
     for (const u of police.units) {
       if (u.destroyed) continue;
@@ -440,7 +528,6 @@ export class HudController {
       ctx.stroke();
     }
 
-    // CALIMA-1 Helicopter icon
     if (police.helicopter.active) {
       const [hx, hy] = toScreen(police.helicopter.x, police.helicopter.z);
       ctx.strokeStyle = '#ffffff';
@@ -453,7 +540,6 @@ export class HudController {
       ctx.stroke();
     }
 
-    // Pulsing Gold Mission Waypoint (clamped to radar edge if far)
     const wp = missions.getWaypoint();
     let [wx, wy] = toScreen(wp.x, wp.z);
     wx = Math.max(10, Math.min(W - 10, wx));
@@ -466,7 +552,6 @@ export class HudController {
     ctx.lineWidth = 1.6;
     ctx.stroke();
 
-    // Player heading arrow at center
     ctx.save();
     ctx.translate(W * 0.5, H * 0.5);
     ctx.rotate(-player.rotY + Math.PI);
@@ -487,7 +572,7 @@ export class HudController {
   _drawAtlasMap(city, player, missions, police) {
     const ctx = this.atlasCtx;
     const W = 440;
-    const H = 380;
+    const H = 360;
     const toMap = (wx, wz) => [((wx + 270) / 610) * W, ((wz + 270) / 540) * H];
 
     ctx.fillStyle = '#0c4d66';
@@ -552,8 +637,7 @@ export class HudController {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // District labels
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
     ctx.font = 'bold 10px sans-serif';
     const labels = [
       ['MIRADOR', -175, -60],

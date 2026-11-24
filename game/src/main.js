@@ -1,6 +1,7 @@
-// Main runtime for Calima Bay: Sunset Syndicate.
+// Main runtime for Calima Bay: Sunset Syndicate (v2 Full Upgrade).
 // Initializes Three.js WebGLRenderer, CalimaCity, Vehicles, Player, Traffic, PoliceDispatch,
-// CombatAndFX, MissionManager, AudioEngine, SaveManager, HUD, and deterministic shot staging.
+// CombatAndFX (true 3D ray aiming, full-world lethality, drive-by, grenades), MissionManager,
+// AudioEngine, SaveManager, HUD (crosshair + hitmarker + kill feed + Atlas ops), and shot staging.
 
 import * as THREE from 'three';
 import { SHOPS, TIME_PRESETS } from './config.js';
@@ -31,7 +32,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.14;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.25, 1100);
@@ -64,6 +65,35 @@ const input = {
   mouseLookActive: false,
   mouseTimer: 0,
 };
+
+function releasePointerLock() {
+  if (document.pointerLockElement && document.exitPointerLock) {
+    try {
+      document.exitPointerLock();
+    } catch {
+      // Ignore browser gesture restriction errors
+    }
+  }
+}
+
+function getCombatCallbacks() {
+  return {
+    onEnemyKilled: (enemy) => missions.onEnemyKilled(enemy, traffic, police, player, audio),
+    onCrime: (heat) => police.addHeat(heat),
+    onHitFeedback: ({ kill }) => {
+      hud.flashHitmarker(kill);
+    },
+    onChopperDowned: () => {
+      player.cash += 1500;
+      player.respect += 160;
+      player.stats.choppersDowned = (player.stats.choppersDowned || 0) + 1;
+      player.stats.takedowns += 1;
+      hud.pushKillFeed('CALIMA-1 AIR ONE DOWN · +$1,500', 'headshot', 4.2);
+      missions.showToast('CALIMA-1 SHOT DOWN!', '+$1,500 BOUNTY · +160 RESPECT', 4.2);
+    },
+    onKillFeed: (msg, kind) => hud.pushKillFeed(msg, kind),
+  };
+}
 
 function startNewGame() {
   audio.unlock();
@@ -106,6 +136,16 @@ function saveCareerSlot(slot) {
       hud.openAtlas(true, { player, missions, city, police, save });
     }
   }
+}
+
+function selectMissionFromAtlas(idx) {
+  missions.missionIndex = idx;
+  missions.stageIndex = 0;
+  pausedAtlas = false;
+  hud.openAtlas(false);
+  missions.startStage(traffic, police);
+  audio.playChime(680);
+  missions.showToast(`LAUNCHED: ${missions.activeMission.title}`, 'Follow the gold beacon on radar', 3.4);
 }
 
 function handleShopPurchase(item) {
@@ -164,8 +204,10 @@ const hud = new HudController({
   onContinue: continueCareer,
   onLoadSlot: loadCareerSlot,
   onSaveSlot: saveCareerSlot,
+  onSelectMission: selectMissionFromAtlas,
   onToggleAtlas: (open) => {
     pausedAtlas = open;
+    if (open) releasePointerLock();
     hud.openAtlas(open, { player, missions, city, police, save });
   },
   onCloseShop: () => {
@@ -240,6 +282,7 @@ window.addEventListener('keydown', (e) => {
       return;
     }
     pausedAtlas = !pausedAtlas;
+    if (pausedAtlas) releasePointerLock();
     hud.openAtlas(pausedAtlas, { player, missions, city, police, save });
     return;
   }
@@ -263,6 +306,14 @@ window.addEventListener('keydown', (e) => {
         if (wasNpc) police.addHeat(nearV.isPolice ? 95 : 42);
       }
     }
+  } else if (code === 'KeyG') {
+    // Quick physical bouncing grenade throw!
+    const thrown = combat.throwGrenade(player, camera, traffic, police, audio, getCombatCallbacks());
+    if (thrown) {
+      hud.pulseCrosshairFire();
+    } else {
+      missions.showToast('NO GRENADES LEFT', 'Restock at Underground Armory [E]', 2.0);
+    }
   } else if (code === 'KeyE') {
     if (activeShop) {
       activeShop = null;
@@ -270,12 +321,14 @@ window.addEventListener('keydown', (e) => {
     } else {
       const shop = findNearbyShop();
       if (shop) {
+        releasePointerLock();
         activeShop = shop;
         hud.openShop(shop, player, handleShopPurchase);
       }
     }
   } else if (code === 'KeyQ') {
     wheelOpen = !wheelOpen;
+    if (wheelOpen) releasePointerLock();
     hud.setWeaponWheel(wheelOpen, player, (idx) => {
       if (player.selectWeapon(idx)) {
         wheelOpen = false;
@@ -307,23 +360,55 @@ window.addEventListener('keyup', (e) => {
   if (code === 'ShiftLeft' || code === 'ShiftRight') input.shift = false;
 });
 
-// Mouse look & firing
+// Seamless Pointer-Lock Mouse Look + Fallback Drag/Free-Aim + Firing & ADS
+let lastMouseX = null;
+let lastMouseY = null;
+
 canvas.addEventListener('mousedown', (e) => {
   if (gameMode !== 'play' || pausedAtlas || activeShop || wheelOpen) return;
   audio.unlock();
+  if (document.pointerLockElement !== canvas && canvas.requestPointerLock) {
+    try {
+      const pr = canvas.requestPointerLock();
+      if (pr && typeof pr.catch === 'function') pr.catch(() => {});
+    } catch {
+      // Fallback non-locked aiming remains active
+    }
+  }
   if (e.button === 0) input.fire = true;
   if (e.button === 2) player.aiming = true;
 });
+
 window.addEventListener('mouseup', (e) => {
   if (e.button === 0) input.fire = false;
   if (e.button === 2) player.aiming = false;
 });
+
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
 window.addEventListener('mousemove', (e) => {
   if (gameMode !== 'play' || pausedAtlas || activeShop || wheelOpen || freezeCamera) return;
-  if (document.pointerLockElement === canvas || e.buttons > 0) {
-    player.camYaw -= e.movementX * 0.0045;
-    player.camPitch = Math.max(-0.25, Math.min(0.62, player.camPitch + e.movementY * 0.003));
+  const locked = document.pointerLockElement === canvas;
+  let dx = 0;
+  let dy = 0;
+  if (locked) {
+    dx = e.movementX || 0;
+    dy = e.movementY || 0;
+  } else {
+    if (lastMouseX !== null) {
+      dx = e.clientX - lastMouseX;
+      dy = e.clientY - lastMouseY;
+    }
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    // Allow drag-look OR effortless on-foot cursor steering when pointer lock isn't active
+    if (e.buttons === 0 && player.vehicle) return;
+    dx *= e.buttons > 0 ? 1.0 : 0.55;
+    dy *= e.buttons > 0 ? 1.0 : 0.45;
+  }
+  if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+    player.camYaw -= dx * 0.0042;
+    player.camPitch = Math.max(-0.42, Math.min(0.62, player.camPitch + dy * 0.003));
     input.mouseLookActive = true;
     input.mouseTimer = 1.6;
   }
@@ -352,7 +437,7 @@ if (shotParam) {
   gameMode = res.mode || 'play';
 }
 
-// Expose minimal read-only state hook for automated verification
+// Expose read-only state hook + combat smoke-test helper for automated verification
 window.__CALIMA_STATE__ = () => ({
   mode: gameMode,
   district: city.currentPreset?.label,
@@ -363,7 +448,74 @@ window.__CALIMA_STATE__ = () => ({
   mission: missions.activeMission.title,
   radio: audio.currentStation.name,
   timeOfDay: TIME_PRESETS[timeIndex].label,
+  takedowns: player.stats.takedowns,
+  pedestriansKilled: traffic.pedestriansKilled,
+  enemiesAlive: traffic.enemies.filter((e) => e.alive).length,
+  pickupsCount: traffic.pickups.length,
+  helicopterHp: police.helicopter.health,
+  grenadesLeft: player.weapons.find((w) => w.id === 'grenade')?.ammo ?? 0,
 });
+
+window.__CALIMA_TEST__ = {
+  aimAndFireAtNearestPedestrian() {
+    const alivePeds = traffic.pedestrians.filter((p) => p.alive);
+    if (!alivePeds.length) return { ok: false, reason: 'no_peds' };
+    alivePeds.sort(
+      (a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z),
+    );
+    const target = alivePeds[0];
+    // Position Rico cleanly in front of target if far
+    if (Math.hypot(target.x - player.x, target.z - player.z) > 18) {
+      player.x = target.x - 8;
+      player.z = target.z;
+    }
+    player.camYaw = Math.atan2(target.x - player.x, target.z - player.z);
+    player.camPitch = 0.06;
+    player.updateCamera(camera, 1.0);
+    camera.lookAt(target.x, 1.35, target.z);
+    camera.updateMatrixWorld();
+    let res = null;
+    for (let i = 0; i < 4 && target.alive; i++) {
+      player.fireCooldown = 0;
+      res = combat.firePlayerWeapon(player, camera, traffic, police, audio, getCombatCallbacks());
+    }
+    return { ok: true, targetAlive: target.alive, res };
+  },
+  aimAndFireAtNearestEnemy() {
+    const aliveEnemies = traffic.enemies.filter((e) => e.alive);
+    if (!aliveEnemies.length) return { ok: false, reason: 'no_enemies' };
+    aliveEnemies.sort(
+      (a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z),
+    );
+    const target = aliveEnemies[0];
+    if (Math.hypot(target.x - player.x, target.z - player.z) > 22) {
+      player.x = target.x - 10;
+      player.z = target.z;
+    }
+    player.camYaw = Math.atan2(target.x - player.x, target.z - player.z);
+    player.camPitch = 0.06;
+    player.updateCamera(camera, 1.0);
+    camera.lookAt(target.x, 1.35, target.z);
+    camera.updateMatrixWorld();
+    let res = null;
+    for (let i = 0; i < 6 && target.alive; i++) {
+      player.fireCooldown = 0;
+      res = combat.firePlayerWeapon(player, camera, traffic, police, audio, getCombatCallbacks());
+    }
+    return { ok: true, targetAlive: target.alive, res };
+  },
+  collectNearestPickup() {
+    if (!traffic.pickups.length) return false;
+    const pk = traffic.pickups[0];
+    player.x = pk.x;
+    player.z = pk.z;
+    return true;
+  },
+  throwTestGrenade() {
+    player.grenadeCooldown = 0;
+    return combat.throwGrenade(player, camera, traffic, police, audio, getCombatCallbacks());
+  },
+};
 
 let lastTs = performance.now();
 
@@ -387,7 +539,7 @@ function animate(now) {
       camera.lookAt(48, 12, -24);
     }
     traffic.update(dt, city, player, null, combat, null);
-    combat.update(dt);
+    combat.update(dt, city);
     renderer.render(scene, camera);
     return;
   }
@@ -411,36 +563,44 @@ function animate(now) {
         police.clearHeat();
       }
 
-      if (input.fire && !player.vehicle) {
-        combat.firePlayerWeapon(
+      player.updateCamera(camera, dt);
+
+      // Firing works both on-foot AND drive-by inside vehicles!
+      if (input.fire) {
+        const res = combat.firePlayerWeapon(
           player,
+          camera,
           traffic,
           police,
           audio,
-          (enemy) => missions.onEnemyKilled(enemy, traffic, police, player, audio),
-          (heat) => police.addHeat(heat),
+          getCombatCallbacks(),
         );
+        if (res.fired) hud.pulseCrosshairFire();
       }
 
-      traffic.update(dt, city, player, combat, combat, (dmg) => player.takeDamage(dmg));
-      police.update(dt, elapsed, city, player, combat, combat, (dmg) => player.takeDamage(dmg));
+      traffic.update(dt, city, player, combat, combat, (dmg) => player.takeDamage(dmg), {
+        audio,
+        onCrime: (heat) => police.addHeat(heat),
+        onEnemyKilled: (enemy) => missions.onEnemyKilled(enemy, traffic, police, player, audio),
+        onCashPickup: (amt) => hud.pushKillFeed(`CASH PICKUP · +$${amt}`, 'cash', 2.4),
+        onKillFeed: (msg, kind) => hud.pushKillFeed(msg, kind),
+      });
+      police.update(dt, elapsed, city, player, combat, combat, (dmg) => player.takeDamage(dmg), audio);
       missions.update(dt, elapsed, player, traffic, police, audio);
-      player.updateCamera(camera, dt);
     } else {
-      // Keep helicopter rotors, sirens, and beacon gently alive in staged shot view
       if (police.helicopter.active) {
         police.helicopter.mainRotor.rotation.y += dt * 18;
         police.helicopter.tailRotor.rotation.x += dt * 24;
       }
     }
 
-    if (!freezeCamera) combat.update(dt);
+    if (!freezeCamera) combat.update(dt, city);
     audio.update(dt, elapsed, player, police, true);
   }
 
   const nearVehicle = !player.vehicle ? traffic.findNearestVehicle(player.x, player.z, 7.8) : null;
   const nearShop = findNearbyShop();
-  hud.update(elapsed, {
+  hud.update(dt, elapsed, {
     player,
     city,
     police,
@@ -449,6 +609,8 @@ function animate(now) {
     traffic,
     nearVehicle,
     nearShop,
+    input,
+    modalOpen: pausedAtlas || !!activeShop || wheelOpen,
   });
 
   renderer.render(scene, camera);

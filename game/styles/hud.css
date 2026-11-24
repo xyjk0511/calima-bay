@@ -64,37 +64,133 @@ html, body {
   background: radial-gradient(circle at center, transparent 54%, rgba(44, 242, 232, 0.35) 100%);
 }
 
-/* Crosshair */
+/* Dynamic Crosshair & Hitmarker */
 #crosshair {
   position: fixed;
   left: 50%;
   top: 50%;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   transform: translate(-50%, -50%);
   pointer-events: none;
-  z-index: 12;
+  z-index: 20;
+  transition: width 0.08s ease-out, height 0.08s ease-out;
+}
+
+#crosshair.ads {
+  width: 22px;
+  height: 22px;
+}
+
+#crosshair.firing {
+  width: 44px;
+  height: 44px;
 }
 
 .ch-line {
   position: absolute;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 6px rgba(44, 242, 232, 0.9);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 6px rgba(44, 242, 232, 0.95), 0 0 2px rgba(0, 0, 0, 0.95);
+  border-radius: 1px;
 }
 
-.ch-top { width: 2px; height: 7px; left: 13px; top: 0; }
-.ch-bottom { width: 2px; height: 7px; left: 13px; bottom: 0; }
-.ch-left { width: 7px; height: 2px; top: 13px; left: 0; }
-.ch-right { width: 7px; height: 2px; top: 13px; right: 0; }
+.ch-top { width: 2px; height: 8px; left: 50%; top: 0; transform: translateX(-50%); }
+.ch-bottom { width: 2px; height: 8px; left: 50%; bottom: 0; transform: translateX(-50%); }
+.ch-left { width: 8px; height: 2px; top: 50%; left: 0; transform: translateY(-50%); }
+.ch-right { width: 8px; height: 2px; top: 50%; right: 0; transform: translateY(-50%); }
 .ch-dot {
   position: absolute;
-  left: 12px;
-  top: 12px;
+  left: 50%;
+  top: 50%;
   width: 4px;
   height: 4px;
+  transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: var(--coral);
-  box-shadow: 0 0 6px var(--coral);
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+}
+
+.ch-hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%) scale(0.75);
+  opacity: 0;
+  transition: opacity 0.1s ease-out, transform 0.1s ease-out;
+}
+
+.ch-hitmarker.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.hm-tick {
+  position: absolute;
+  width: 9px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.95);
+}
+
+.ch-hitmarker.kill .hm-tick {
+  background: #ff2948;
+  box-shadow: 0 0 12px #ff2948, 0 0 4px #ffffff;
+  height: 3px;
+  width: 11px;
+}
+
+.hm-tl { top: 4px; left: 2px; transform: rotate(45deg); }
+.hm-tr { top: 4px; right: 2px; transform: rotate(-45deg); }
+.hm-bl { bottom: 4px; left: 2px; transform: rotate(-45deg); }
+.hm-br { bottom: 4px; right: 2px; transform: rotate(45deg); }
+
+/* Floating Kill Feed / Cash Pickup Toasts */
+#kill-feed {
+  position: absolute;
+  left: 50%;
+  top: 108px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+  z-index: 22;
+}
+
+.kf-item {
+  padding: 4px 13px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.9px;
+  background: rgba(11, 15, 32, 0.84);
+  border: 1px solid rgba(255, 94, 108, 0.72);
+  color: #ffffff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.kf-item.kill {
+  border-color: #ff3b5c;
+  color: #ffe8ec;
+  box-shadow: 0 0 16px rgba(255, 41, 72, 0.5);
+}
+
+.kf-item.headshot {
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 18px rgba(255, 209, 102, 0.55);
+}
+
+.kf-item.cash {
+  border-color: var(--mint);
+  color: var(--mint);
+  box-shadow: 0 0 14px rgba(77, 240, 169, 0.45);
 }
 
 /* Live HUD */
@@ -972,10 +1068,59 @@ html, body {
 
 #atlas-canvas {
   width: 440px;
-  height: 380px;
+  height: 360px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   display: block;
+}
+
+.atlas-ops-block {
+  margin-top: 10px;
+}
+
+.mission-select-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.mission-op-btn {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e6ecf8;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.mission-op-btn:hover {
+  border-color: var(--cyan);
+  background: rgba(44, 242, 232, 0.14);
+}
+
+.mission-op-btn.active {
+  border-color: var(--gold);
+  background: rgba(255, 209, 102, 0.18);
+  color: var(--gold);
+}
+
+.mission-op-btn.cleared .op-tag {
+  color: var(--mint);
+}
+
+.op-tag {
+  font-size: 9.5px;
+  font-weight: 900;
+  color: var(--cyan);
+  white-space: nowrap;
 }
 
 .atlas-legend {

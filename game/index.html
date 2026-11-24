@@ -24,6 +24,12 @@
       <span class="ch-line ch-left"></span>
       <span class="ch-line ch-right"></span>
       <span class="ch-dot"></span>
+      <div id="hitmarker" class="ch-hitmarker">
+        <span class="hm-tick hm-tl"></span>
+        <span class="hm-tick hm-tr"></span>
+        <span class="hm-tick hm-bl"></span>
+        <span class="hm-tick hm-br"></span>
+      </div>
     </div>
   </div>
 
@@ -90,18 +96,20 @@
         <div id="weapon-row">
           <div class="weapon-info">
             <span id="weapon-name">CARBINE RIFLE</span>
-            <span id="weapon-slot-hint">[1-6 / Q]</span>
+            <span id="weapon-slot-hint">[1-6 / Q / G GRENADE]</span>
           </div>
           <span id="weapon-ammo">30 / 180</span>
         </div>
       </div>
     </div>
 
-    <!-- Center-Top Toast & Commlink -->
+    <!-- Center-Top Toast, Floating Kill Feed & Commlink -->
     <div id="toast-banner" class="hidden">
       <div id="toast-title">STUNT JUMP COMPLETE</div>
       <div id="toast-sub">+$1,200 · 48m AIRTIME</div>
     </div>
+
+    <div id="kill-feed"></div>
 
     <div id="commlink-bar" class="hidden">
       <div id="commlink-speaker">NADIA CRUZ</div>
@@ -152,6 +160,7 @@
 
       <div id="controls-strip">
         <span><b>F</b> Vehicle</span>
+        <span><b>G</b> Grenade</span>
         <span><b>Q</b> Arsenal</span>
         <span><b>E</b> Shop</span>
         <span><b>T</b> Sky</span>
@@ -181,13 +190,13 @@
       </div>
       <div class="title-controls">
         <span><b>WASD</b> Move / Drive</span>
-        <span><b>MOUSE</b> Aim / Fire</span>
+        <span><b>MOUSE</b> Aim / Fire / Drive-By</span>
+        <span><b>RMB</b> ADS Zoom</span>
+        <span><b>G</b> Quick Grenade</span>
         <span><b>F</b> Enter / Hijack</span>
         <span><b>SPACE</b> Drift / Jump</span>
         <span><b>SHIFT</b> Nitro / Sprint</span>
-        <span><b>Q</b> Weapon Wheel</span>
-        <span><b>E</b> Garage / Armory</span>
-        <span><b>R</b> FM Radio</span>
+        <span><b>Q / E</b> Arsenal / Shop</span>
       </div>
     </div>
   </div>
@@ -198,19 +207,23 @@
       <div class="modal-head">
         <div>
           <div class="modal-eyebrow">CALIMA BAY SYNDICATE NETWORK</div>
-          <h2>CITY ATLAS &amp; CAREER</h2>
+          <h2>CITY ATLAS &amp; OPERATIONS</h2>
         </div>
         <button id="btn-close-atlas" class="btn-ghost">RESUME [ESC]</button>
       </div>
       <div class="atlas-body">
         <div class="atlas-map-col">
-          <canvas id="atlas-canvas" width="440" height="380"></canvas>
+          <canvas id="atlas-canvas" width="440" height="360"></canvas>
           <div class="atlas-legend">
             <span><i class="dot gold"></i>Active Operation</span>
             <span><i class="dot cyan"></i>Morales Customs</span>
             <span><i class="dot coral"></i>Underground Armory</span>
             <span><i class="dot lime"></i>Stunt Ramp</span>
             <span><i class="dot police"></i>CBPD Unit</span>
+          </div>
+          <div class="info-block atlas-ops-block">
+            <h3>SYNDICATE OPERATIONS (CLICK TO LAUNCH)</h3>
+            <div id="atlas-missions" class="mission-select-grid"></div>
           </div>
         </div>
         <div class="atlas-info-col">
